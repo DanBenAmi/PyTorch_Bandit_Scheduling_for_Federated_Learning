@@ -1,0 +1,8 @@
+# Ignore all files
+*
+
+# But not these directories
+!*/
+
+# And not these files
+!*.py
