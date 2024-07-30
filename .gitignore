@@ -6,3 +6,4 @@
 
 # And not these files
 !*.py
+!requirements.txt

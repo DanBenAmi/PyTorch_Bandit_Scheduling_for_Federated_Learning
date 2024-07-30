@@ -22,7 +22,7 @@ from Client_Selection import *
 
 # Define the Federated Learning Simulation class
 class FederatedLearning:
-    def __init__(self, global_model, all_clients:List[Client], test_data, device="cpu", iid=True, track_observations=False):
+    def __init__(self, global_model, all_clients:List[Client], test_data, device="cpu", iid=True, track_observations=True):
         self.global_model = global_model
         self.all_clients = all_clients
         self.device = device
@@ -35,7 +35,7 @@ class FederatedLearning:
         self.results = {'accuracy':[], 'loss':[], 'time':[], 'iters':[], "track observations": self.track_observations}
 
         # set criterion
-        if len(self.test_loader.dataset[0][0].size()):  # data is 1d vector (linear regression task)
+        if len(self.test_loader.dataset[0][0].size()) == 1:  # data is 1d vector (linear regression task)
             self.criterion = nn.MSELoss()
         else:
             self.criterion = nn.CrossEntropyLoss()
@@ -137,9 +137,6 @@ class FederatedLearning:
         iter = 1
         last_time_eval = time_left
 
-        # warmup client selection alg (visualize that the training is on much more clients and datasets)
-        self.selection_alg_warmup(client_selection_method, selection_size, warmup_selection_alg)
-
         # regret analysis
         if calc_regret:
             self.results["regret"] = []
@@ -157,7 +154,7 @@ class FederatedLearning:
             trained_dict = {'iter_times':[None]*selection_size, "loss":[None]*selection_size}
             for i, client in tqdm(enumerate(selected_clients)):
                 client.local_model.load_state_dict(initial_weights)
-                local_optimizer = optim.SGD(client.local_model.parameters(), lr=0.001, momentum=0.9)
+                local_optimizer = optim.Adam(client.local_model.parameters(), lr=0.001)
                 iter_time, client_trained_dict = client.train(local_optimizer, self.criterion)
 
                 trained_dict["iter_times"][i] = iter_time

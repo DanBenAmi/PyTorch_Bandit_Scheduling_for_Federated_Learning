@@ -35,6 +35,7 @@ class Client:
 
     def train(self, optimizer, criterion, epochs=1):
         self.local_model.train()
+        batch_losses = []           # List to store all batch losses
         train_loader = DataLoader(self.data, batch_size=self.batch_size, shuffle=True)
         for epoch in range(epochs):
             for datapoint, labels in train_loader:
@@ -44,10 +45,12 @@ class Client:
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
+                batch_losses.append(loss.item())
                 # Debug: Print loss values
                 # print(f"Client {self.client_id}, Epoch {epoch}, Loss: {loss.item()}")
-        iter_time = np.clip(np.random.normal(self.mean_time, self.std_time), 0.1, 1)
-        return iter_time, {"loss":loss}
+        mean_loss = np.mean(batch_losses)    # Calculate mean loss
+        iter_time = np.clip(np.random.normal(self.mean_time, self.std_time), 0.1, 1)  # Simulate iteration time
+        return iter_time, {"loss":mean_loss}
 
 
 
