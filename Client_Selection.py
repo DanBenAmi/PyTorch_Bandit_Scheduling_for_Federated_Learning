@@ -57,7 +57,7 @@ class BSFL(Client_Selection):
         cntr2 = 0
         cntr3 = 0
         history = [0] * (iters + self.n_clients * climb_iters - 1)
-        max_energy = -self.n_clients * 1000000
+        max_energy = -1 * float('inf')
         max_idxes = []
         while k < iters + self.n_clients * climb_iters:
             history[k - 1] = selection_energy

@@ -23,9 +23,10 @@ from Client_Selection import *
 # Define the Federated Learning Simulation class
 class FederatedLearning:
     def __init__(self, global_model, all_clients:List[Client], test_data, device="cpu", iid=True, track_observations=True):
-        self.global_model = global_model
-        self.all_clients = all_clients
         self.device = device
+        self.global_model = global_model
+        self.global_model.to(self.device)
+        self.all_clients = all_clients
         self.n_clients = len(all_clients)
         self.data_size = np.array([client.data_size for client in all_clients])
         self.last_selection_indices = []
@@ -135,11 +136,13 @@ class FederatedLearning:
         self.results['total_time'] = total_time
         time_left = total_time
         iter = 1
-        last_time_eval = time_left
 
         # regret analysis
         if calc_regret:
             self.results["regret"] = []
+
+        self.evaluate_global_model(iter, total_time - time_left)
+        last_time_eval = time_left
 
         while time_left > 0:
             selected_clients_indices = client_selection_method.select_clients()

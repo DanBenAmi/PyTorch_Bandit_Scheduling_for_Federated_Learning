@@ -19,7 +19,7 @@ from FL import FederatedLearning
 from Client_Selection import *
 from data_utils import *
 
-Debug = True
+Debug = False
 
 def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, param_vals, dataset="Cifar10"):
     total_time = time_bulks * n_clients // selection_size
@@ -31,7 +31,7 @@ def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, para
     client_datasets = random_split(train_dataset, [len(train_dataset) // n_clients] * n_clients)
 
     # Define the global model
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if Debug:
         device = "cpu"
 
@@ -49,10 +49,13 @@ def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, para
     global_weights = copy.deepcopy(global_model.state_dict())
 
     # Create clients iid
-    fast_clients_relation = 0.9  # 0.9
-    all_clients_dists = np.concatenate((np.random.uniform(low=[0.7, 0], high=[0.9, 0.05], size=(round(
-        n_clients * (1-fast_clients_relation)), 2)), np.random.uniform(low=[0.1, 0], high=[0.2, 0.05], size=(round(
-        n_clients * fast_clients_relation), 2))))
+    fast_clients_relation = 0.1  # 0.9
+    slow_clients_relation = 0.1  # 0.9
+    all_clients_dists = np.concatenate((
+        np.random.uniform(low=[0.93, 0], high=[0.97, 0.03], size=(round(n_clients * slow_clients_relation), 2)),
+        np.random.uniform(low=[0.13, 0], high=[0.15, 0.03], size=(round(n_clients * fast_clients_relation), 2)),
+        np.random.uniform(low=[0.51, 0], high=[0.54, 0.03], size=(round(n_clients * (1-slow_clients_relation-fast_clients_relation)), 2))
+    ))
     # all_clients_dists = np.stack(
     #     (np.repeat(np.linspace(0.2, 0.9, 10), n_clients // 10), np.ones(n_clients) * 0.1)).transpose(1, 0)
     all_clients = [Client(id=i, local_model=local_model, data=client_datasets[i], mean_std_time=all_clients_dists[i],
@@ -60,7 +63,7 @@ def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, para
 
     warmup_iters = cs_inp.pop('warmup_iters')
     for param in param_vals:
-        res = cs_inp.copy()
+        res = {}
         res.update({'total_time': total_time, 'dataset':dataset, 'n_clientsn':n_clients, 'selection_size':selection_size})
         global_model.load_state_dict(global_weights)
 
@@ -74,6 +77,7 @@ def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, para
 
         # Train the global model using Federated Learning
         res.update(fl_simulation.train(selection_size, bsfl, total_time))
+        res.update(cs_inp.copy())
 
         with open(os.path.join(res_dir, f"results_{param_name}={param}.pkl"), 'wb') as f:
             pickle.dump(res, f)
@@ -84,7 +88,8 @@ def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, para
 
 if __name__ == "__main__":
     cs_inp = {"alpha":0.1, 'beta':1, 'tau_min':0.1, 'iid':True, 'warmup_iters': 3500}
-    param_search(time_bulks=20, n_clients=500, selection_size=25, cs_inp=cs_inp, param_name='alpha', param_vals=[0, 0.1, 1, 100], dataset='cifar10')
+    # param_search(time_bulks=20, n_clients=500, selection_size=25, cs_inp=cs_inp, param_name='beta', param_vals=[0.1, 1, 2, 10], dataset='cifar10')
+    param_search(time_bulks=20, n_clients=500, selection_size=25, cs_inp=cs_inp, param_name='alpha', param_vals=[0, 0.1, 1, 10, 100], dataset='cifar10')
 
 
 
