@@ -28,7 +28,7 @@ class Client:
         self.mean_time = mean_std_time[0]
         self.std_time = mean_std_time[1]
         self.device = device
-        self.batch_size = 32
+        self.batch_size = 16
         # -------------------------- in the server -----------------------------------------
         self.id = id  # ID i.e. idx in all_clients list
         self.data_size = len(data)

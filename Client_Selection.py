@@ -14,19 +14,19 @@ class Client_Selection:
         self.n_clients = n_clients
         self.selection_size = selection_size
         self.last_selection_indices = []
-        self.n_observations = [0]*n_clients
+        self.n_observations = np.array([0]*n_clients)
 
 
 
     def select_clients(self, all_clients):
         return clients_indices
 
-    def post_iter_process(self):
-        pass
+    def post_iter_process(self, _):
+        self.n_observations[self.last_selection_indices] += 1
 
 
 class BSFL(Client_Selection):
-    def __init__(self, all_clients, total_time, n_clients, selection_size, iid, alpha, beta=1, tau_min=0.1):
+    def __init__(self, all_clients, total_time, n_clients, selection_size, iid, alpha=1, beta=5, tau_min=0.1):
         super().__init__(total_time, n_clients, selection_size)
         self.iid = iid
         self.mu_rate = np.array([0] * n_clients, dtype=np.float32) # clients' averages iteration times
@@ -41,6 +41,9 @@ class BSFL(Client_Selection):
             self.data_quality = np.array([client.q for client in all_clients])
             self.data_size = np.array([client.data_size for client in all_clients])
             self.sum_importance = np.sum(self.data_size * self.data_quality)
+
+    def __repr__(self):
+        return "BSFL"
 
     def calc_indices_energy(self, indices, climb_iters=5):
         ucbs = self.ucb[indices]
@@ -149,6 +152,12 @@ class cs_ucb(Client_Selection):
             self.b = np.zeros(n_clients)
             self.beta = 0.5
 
+    def __repr__(self):
+        if self.iid:
+            return "CS-UCB"
+        else:
+            return "CS-UCB-Q"
+
     def cs_ucb_selection(self):
         # Initialize - first select each client once
         unselected_clients_indices = [id for id in range(self.n_clients) if self.n_observations[id] == 0]
@@ -212,6 +221,7 @@ class RBCS_F(Client_Selection):
     def __init__(self, all_clients, total_time, n_clients, selection_size, iid):
         super().__init__(total_time, n_clients, selection_size)
 
+        self.all_clients = all_clients
         self.m = selection_size
         self.beta = 0.5
         self.lamda = 1
@@ -227,16 +237,19 @@ class RBCS_F(Client_Selection):
         self.V = 5
         self.tau_bar = np.zeros(n_clients)
 
+    def __repr__(self):
+        return "RBCS-F"
+
     def div_and_conc(self):
         indices_of_z_sorted = np.argsort(-self.z) #sort in descending order. i.e. z[indices_of_z_sorted[0]] is biggest
         F_max = np.ones(len(self.tau_bar))*np.inf
         S_max = [0]*len(self.tau_bar)
-        for n_max in range(len(tau_bar)):
+        for n_max in range(len(self.tau_bar)):
             S_n_max = []
             for n in indices_of_z_sorted:
                 if self.tau_bar[n] <= self.tau_bar[n_max]:
                     S_n_max.append(n)
-                if len(S_n_max) == m:
+                if len(S_n_max) == self.m:
                     S_max[n_max] = S_n_max
                     F_max[n_max] = self.V*max([self.tau_bar[i] for i in S_n_max])-sum([self.z[i] for i in S_n_max])
                     break
@@ -246,22 +259,23 @@ class RBCS_F(Client_Selection):
             x[i] = 1
         return x, S_max[n_star]
 
-    def select_clients(self, all_clients:List[Client]):
+    def select_clients(self):
         for id in range(self.n_clients):
             self.theta_hat[id] = np.linalg.inv(self.H_of_clients[id])@self.b[id]
             # c = [1⁄mu , s , M/B] where mu is available CPU ratio of the client, s is A binary indicator indicates if
             # client n has participated in training in the last round, M is the size of the model’s parameters
             # (measured by bit) and B indicates the allocated bandwidth.
-            mu = min(1/np.random.normal(all_clients[id].mean_time, all_clients[id].std_time) * np.random.normal(1,0.2)/5,1) # assume CPU is proportional to the actual time but with
+            mu = np.clip(1-np.random.normal(self.all_clients[id].mean_time, self.all_clients[id].std_time*3)+np.random.randn()/5,0.1,1) # assume CPU is proportional to the actual time but with
             self.c[id] = np.array([1/mu, self.x[id], 1])
             self.tau_hat[id] = self.c[id].transpose()@self.theta_hat[id]
             self.tau_bar[id] = self.tau_hat[id] - \
                                   self.alpha*np.sqrt(self.c[id].transpose() @ self.H_of_clients[id] @ self.c[id])
-        self.x, selected_indices = div_and_conc(tau_bar, m, np.ones(num_of_clients), z, V)
+        self.x, selected_indices = self.div_and_conc()
         self.last_selection_indices = selected_indices
         return selected_indices
 
     def post_iter_process(self, trained_dict):
+        self.n_observations[self.last_selection_indices] += 1
         iter_times = trained_dict['iter_times']
         self.z = np.array([max([self.z[i] +self.beta - self.x[i], 0]) for i in range(self.n_clients)])
         for i, id in enumerate(self.last_selection_indices):
@@ -279,7 +293,10 @@ class Random_Selection(Client_Selection):
         else:
             self.probs = 1 / (np.ones(n_clients)*n_clients)
 
-    def select_clients(self, all_clients):
+    def __repr__(self):
+        return "Random Selection"
+
+    def select_clients(self):
         selected_indices = np.random.choice(self.n_clients, self.selection_size, replace=False, p=self.probs)
         self.last_selection_indices = selected_indices
         return selected_indices
@@ -290,7 +307,10 @@ class PowerOfChoice(Client_Selection):
         super().__init__(total_time, n_clients, selection_size)
         self.clients_loss = np.ones(n_clients) * 100000
 
-    def select_clients(self, all_clients):
+    def __repr__(self):
+        return "Power-of-Choice"
+
+    def select_clients(self):
         selected_indices = np.argsort(self.clients_loss)[-1*self.selection_size:]
         self.last_selection_indices = selected_indices
         return selected_indices
@@ -299,7 +319,7 @@ class PowerOfChoice(Client_Selection):
         self.n_observations[self.last_selection_indices] += 1
 
         for loss, id in zip(trained_dict["loss"], self.last_selection_indices):
-            self.clients_loss[id] = (self.clients_loss[id]*(self.n_observations[id]-1)+loss) / self.n_observations
+            self.clients_loss[id] = (self.clients_loss[id]*(self.n_observations[id]-1)+loss) / self.n_observations[id]
 
 
 

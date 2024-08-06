@@ -19,7 +19,7 @@ from FL import FederatedLearning
 from Client_Selection import *
 from data_utils import *
 
-Debug = False
+Debug = True
 
 def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, param_vals, dataset="Cifar10"):
     total_time = time_bulks * n_clients // selection_size
