@@ -23,7 +23,7 @@ from Client_Selection import *
 
 # Define the Federated Learning Simulation class
 class FederatedLearning:
-    def __init__(self, global_model, all_clients:List[Client], test_data, device="cpu", iid=True, track_observations=True, beta=1, alpha=1):
+    def __init__(self, global_model, all_clients:List[Client], test_data, device="cpu", iid=True, track_observations=False, beta=1, alpha=1, tau_min=0.1):
         self.device = device
         self.global_model = global_model
         self.global_model.to(self.device)
@@ -33,6 +33,7 @@ class FederatedLearning:
         self.last_selection_indices = []
         self.track_observations = [] if track_observations else False
         self.iid = iid
+        self.tau_min = tau_min
 
         self.test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
         self.results = {'accuracy':[], 'loss':[], 'time':[], 'iters':[], "track observations": self.track_observations}
@@ -50,6 +51,10 @@ class FederatedLearning:
             self.data_quality = np.array([client.q for client in all_clients])
             self.data_size = np.array([client.data_size for client in all_clients])
             self.sum_importance = np.sum(self.data_size * self.data_quality)
+        else:
+            self.data_size = None
+            self.data_quality = None
+
 
     def distribute_model(self):
         global_weights = copy.deepcopy(self.global_model.state_dict())
@@ -79,13 +84,13 @@ class FederatedLearning:
                     tmp_res = selection_method.selection_size * self.data_size[id] * self.data_quality[id] / self.sum_importance - selection_method.n_observations[id] / iter
                 g[id] = np.abs(tmp_res) ** self.beta * np.sign(tmp_res)
 
-        selection_reward = min([tau_min / self.all_clients[j].mean_time for j in selection_indices]) + self.alpha * g[selection_indices].sum()
+        selection_reward = min([self.all_clients[j].mean_rate for j in selection_indices]) + self.alpha * g[selection_indices].mean()
 
         max_reward = -np.inf
         for clients in combinations(self.all_clients, selection_method.selection_size):
             clients = list(clients)
             curr_selection_ids = [client.id for client in clients]
-            curr_selection_reward = min([tau_min / self.all_clients[j].mean_time for j in curr_selection_ids]) + self.alpha * g[curr_selection_ids].sum()
+            curr_selection_reward = min([self.all_clients[j].mean_rate for j in curr_selection_ids]) + self.alpha * g[curr_selection_ids].mean()
             if curr_selection_reward > max_reward:
                 max_reward = curr_selection_reward
                 best_indices = curr_selection_ids
@@ -114,7 +119,7 @@ class FederatedLearning:
 
 
 
-        if isinstance(acc, bool):
+        if isinstance(acc, float):
             self.results['accuracy'].append(acc)
         self.results['loss'].append(loss.item())
         self.results['time'].append(time)
@@ -134,7 +139,7 @@ class FederatedLearning:
             selected_clients_indices = client_selection_method.select_clients()
             selected_clients = [self.all_clients[i] for i in selected_clients_indices]
             for i, client in enumerate(selected_clients):
-                iter_time = np.clip(np.random.normal(client.mean_time, client.std_time), 0.1, 1)
+                iter_time = np.clip(self.tau_min / np.random.normal(client.mean_rate, client.std_rate), self.tau_min, 1)
                 trained_dict["iter_times"][i] = iter_time
             trained_dict["iter"] = iter
             client_selection_method.post_iter_process(trained_dict)
@@ -143,12 +148,11 @@ class FederatedLearning:
                     self.track_observations.append(client_selection_method.n_observations.copy())
 
 
-    def train(self, selection_size, client_selection_method:Client_Selection, total_time, time_bt_eval=3, warmup_selection_alg=0, calc_regret=False):
+    def train(self, selection_size, client_selection_method:Client_Selection, total_time, time_bt_eval=3, warmup_selection_alg=0, calc_regret=False, lr=0.001):
         self.results['total_time'] = total_time
         time_left = total_time
         iter = warmup_selection_alg
-        lr = 0.001
-        last_lr = 0.00001
+        last_lr = lr/50
         lr_decay = (last_lr/lr)**(1/(total_time/time_bt_eval))
 
         # regret analysis
@@ -160,6 +164,7 @@ class FederatedLearning:
 
         while time_left > 0:
             selected_clients_indices = client_selection_method.select_clients()
+            time_left -= client_selection_method.selection_communication_time
             selected_clients = [self.all_clients[i] for i in selected_clients_indices]
             initial_weights = self.distribute_model()
 
@@ -194,12 +199,12 @@ class FederatedLearning:
                 self.evaluate_global_model(iter, total_time-time_left)
                 last_time_eval = time_left
                 lr = lr * lr_decay
-            iter += 1
 
             # regret analysis
             if calc_regret:
                 self.results["regret"].append(self.calc_curr_regret(client_selection_method, iter))
 
+            iter += 1
 
         self.results["n_observations"] = client_selection_method.n_observations
         return self.results

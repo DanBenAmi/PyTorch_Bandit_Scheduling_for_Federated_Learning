@@ -58,7 +58,7 @@ def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, para
     ))
     # all_clients_dists = np.stack(
     #     (np.repeat(np.linspace(0.2, 0.9, 10), n_clients // 10), np.ones(n_clients) * 0.1)).transpose(1, 0)
-    all_clients = [Client(id=i, local_model=local_model, data=client_datasets[i], mean_std_time=all_clients_dists[i],
+    all_clients = [Client(id=i, local_model=local_model, data=client_datasets[i], mean_std_rate=all_clients_dists[i],
                           device=device) for i in range(n_clients)]
 
     warmup_iters = cs_inp.pop('warmup_iters')
@@ -87,9 +87,9 @@ def param_search(time_bulks, n_clients, selection_size, cs_inp, param_name, para
 
 
 if __name__ == "__main__":
-    cs_inp = {"alpha":0.1, 'beta':1, 'tau_min':0.1, 'iid':True, 'warmup_iters': 3500}
-    # param_search(time_bulks=20, n_clients=500, selection_size=25, cs_inp=cs_inp, param_name='beta', param_vals=[0.1, 1, 2, 10], dataset='cifar10')
-    param_search(time_bulks=20, n_clients=500, selection_size=25, cs_inp=cs_inp, param_name='alpha', param_vals=[0, 0.1, 1, 10, 100], dataset='cifar10')
+    cs_inp = {"alpha":1, 'beta':2, 'tau_min':0.1, 'iid':True, 'warmup_iters': 3500}
+    # param_search(time_bulks=20, n_clients=500, selection_size=25, cs_inp=cs_inp, param_name='beta', param_vals=[0.1, 1, 2, 10], dataset='fashion_mnist')
+    param_search(time_bulks=20, n_clients=500, selection_size=25, cs_inp=cs_inp, param_name='alpha', param_vals=[0, 0.1, 1, 10, 100], dataset='fashion_mnist')
 
 
 

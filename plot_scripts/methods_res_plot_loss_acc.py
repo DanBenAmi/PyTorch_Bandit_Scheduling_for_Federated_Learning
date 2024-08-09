@@ -4,26 +4,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def read_pkl_files(dir_path):
-    data_dicts = []
+    data_dicts = {}
     for filename in os.listdir(dir_path):
         if filename.endswith('.pkl'):
             file_path = os.path.join(dir_path, filename)
             with open(file_path, 'rb') as f:
-                data_dicts.append(pickle.load(f))
+                data_dicts[os.path.splitext(filename)[0]] = (pickle.load(f))
     return data_dicts
 
 def moving_average(data, window_size):
     return np.convolve(data, np.ones(window_size) / window_size, mode='valid')
 
-def plot_data(data_dicts, window_size=10, param='alpha'):
+def plot_data(data_dicts, window_size=1):
     plt.figure(figsize=(12, 6))
 
     # Plot time vs. accuracy
     plt.subplot(1, 2, 1)
     markers = ['o', '+', '*', 'x', 'v']
-    for i, data in enumerate(data_dicts):
-        smoothed_acc = moving_average(data['accuracy'], window_size)
-        plt.plot(data['time'][:len(smoothed_acc)], smoothed_acc, marker=markers[i], label=f"{param}={data[param]}")
+    for i, (cs_name, data) in enumerate(data_dicts.items()):
+        smoothed_acc = moving_average(np.cumsum(data['accuracy'][1:]), window_size)
+        plt.plot(data['time'][:len(smoothed_acc)], smoothed_acc, marker=markers[i], label=f"{cs_name}")
     plt.xlabel('Time', fontsize=14)
     plt.ylabel('Accuracy', fontsize=14)
     plt.title('Time vs. Accuracy', fontsize=16)
@@ -31,9 +31,9 @@ def plot_data(data_dicts, window_size=10, param='alpha'):
 
     # Plot time vs. loss
     plt.subplot(1, 2, 2)
-    for i, data in enumerate(data_dicts):
+    for i, (cs_name, data) in enumerate(data_dicts.items()):
         smoothed_loss = moving_average(data['loss'], window_size)
-        plt.plot(data['time'][:len(smoothed_loss)], smoothed_loss, marker=markers[i], label=f"{param}={data[param]}")
+        plt.plot(data['time'][:len(smoothed_loss)], smoothed_loss, marker=markers[i], label=f"{cs_name}")
     plt.xlabel('Time', fontsize=14)
     plt.ylabel('Loss', fontsize=14)
     plt.title('Time vs. Loss', fontsize=16)
@@ -44,8 +44,8 @@ def plot_data(data_dicts, window_size=10, param='alpha'):
 
 
 if __name__ == '__main__':
-    # dir_path = '../results/param_compare/2024-08-03_09:12_beta=[0.1, 1, 2, 10]'  # Replace with your directory path
-    dir_path = '../results/param_compare/2024-08-03_09:11_alpha=[0, 0.1, 1, 10, 100]'  # Replace with your directory path
+    # dir_path, param = '../results/param_compare/2024-08-03_21:21_beta=[0.1, 1, 2, 10]', 'beta'  # Replace with your directory path
+    dir_path = '../results/methods_compare/2024-08-09_01:14__iid__fashion_mnist__500_25__20t__lr5'  # Replace with your directory path
     data_dicts = read_pkl_files(dir_path)
-    plot_data(data_dicts, param='alpha')
+    plot_data(data_dicts)
     plt.show(block=True)

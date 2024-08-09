@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 for alpha in [0.1, 0.5,1,100]:
-    with open(f"../results/param_compare/2024-07-30_alpha=[0, 0.1, 0.5, 1, 2, 10, 50, 100]/track_observations_alpha={alpha}.pkl", 'rb') as f:
+    # with open(f"../results/param_compare/2024-07-30_alpha=[0, 0.1, 0.5, 1, 2, 10, 50, 100]/track_observations_alpha={alpha}.pkl", 'rb') as f:
+    with open(f"../results/param_compare/2024-07-30_beta=[0, 0.1, 0.5, 1, 2, 10, 100]/track_observations_beta={alpha}.pkl", 'rb') as f:
         data = pickle.load(f)
     data = np.array(data)[::5]
 
