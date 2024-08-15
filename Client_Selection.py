@@ -239,8 +239,8 @@ class RBCS_F(Client_Selection):
         self.tau_bar = np.zeros(n_clients)
         # A typical TCP handshake involves several steps: SYN, SYN-ACK, and ACK. Let's assume that each handshake takes
         # approximately 20 milliseconds, which is a reasonable estimate for a basic network round-trip time.
-        # therefore in each round, for all the clients to send the context is 0.02
-        self.selection_communication_time = 0.02 * n_clients / 10 # we supppose the training time is between 1 sec to 10 sec and it is normalized..
+        # therefore in each round, for each client to send the context is 0.02, in selection_size orthogonal channels.
+        self.selection_communication_time = 0.02 * n_clients / selection_size / 5 # we supppose the training time is between 1 sec to 10 sec and it is normalized..
 
     def __repr__(self):
         return "RBCS-F"
@@ -270,7 +270,7 @@ class RBCS_F(Client_Selection):
             # c = [1⁄mu , s , M/B] where mu is available CPU ratio of the client, s is A binary indicator indicates if
             # client n has participated in training in the last round, M is the size of the model’s parameters
             # (measured by bit) and B indicates the allocated bandwidth.
-            mu = np.clip(np.random.normal(self.all_clients[id].mean_rate, self.all_clients[id].std_rate*8)+np.random.randn()/5,0.1,1) # assume CPU is proportional to the actual time but with
+            mu = np.clip(np.random.normal(self.all_clients[id].mean_rate, self.all_clients[id].std_rate*6)+np.random.randn()/5,0.1,1) # assume CPU is proportional to the actual time but with
             self.c[id] = np.array([1/mu, self.x[id], 1])
             self.tau_hat[id] = self.c[id].transpose()@self.theta_hat[id]
             self.tau_bar[id] = self.tau_hat[id] - \

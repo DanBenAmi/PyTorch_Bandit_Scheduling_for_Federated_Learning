@@ -20,14 +20,16 @@ def get_data(dataset="cifar10"):
         train_dataset = datasets.FashionMNIST(root='./data', train=True, download=True, transform=transform)
         test_dataset = datasets.FashionMNIST(root='./data', train=False, download=True, transform=transform)
     elif dataset.lower() == "lin_reg":
-        train_size = 300 #TODO change bacl the number of data points later
-        test_size = 1000
+        train_size = 60 #TODO change back the number of data points later
+        test_size = 5000
+        n_features = 10
         # Generate some example data
-        x_train = torch.randn(train_size, 10) * 0.5 + 0.5  # 1000 samples, 10 features
-        true_weights = torch.arange(10).float() / 10
+        x_train = torch.randn(train_size, n_features)  # 1000 samples, 10 features
+        true_weights = torch.randn(n_features)
         bias = 0.5
-        y_train = torch.matmul(x_train, true_weights) + bias + 1.0 * torch.randn(train_size)  # Linear relation with noise TODO change back to noise of 0.05* randn
-        x_test = torch.randn(test_size, 10) * 0.5 + 0.5  # 1000 samples, 10 features
+        noise_level = 0.5
+        y_train = torch.matmul(x_train, true_weights) + bias + noise_level * torch.randn(train_size)  # Linear relation with noise TODO change back to noise of 0.05* randn
+        x_test = torch.randn(test_size, n_features) # 1000 samples, 10 features
         y_test = torch.matmul(x_test, true_weights) + bias
         # Create TensorDatasets
         train_dataset = TensorDataset(x_train, y_train)
@@ -39,7 +41,7 @@ def add_noise(data_points, q):
     if data_points.ndim == 2: # lin_reg dataset
         noise = np.random.normal(loc=0, scale=(1 - q) / 2, size=data_points.shape)
     else:
-        noise = np.random.normal(loc=0, scale=(1 - q) / 8, size=data_points.shape)
+        noise = np.random.normal(loc=0, scale=(1 - q) / 4, size=data_points.shape)
     noisy_data_points = data_points + noise
     if noisy_data_points.ndim > 2: # images and not vectors..
         noisy_data_points = np.clip(noisy_data_points, 0, 1)  # Ensure the values are within [0, 1]

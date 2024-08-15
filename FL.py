@@ -15,7 +15,7 @@ from typing import List
 from itertools import combinations
 from scipy.special import comb
 from torch.optim.lr_scheduler import CosineAnnealingLR  # Add this import
-
+from torch.utils.tensorboard import SummaryWriter
 
 from Client import *
 from Client_Selection import *
@@ -23,7 +23,7 @@ from Client_Selection import *
 
 # Define the Federated Learning Simulation class
 class FederatedLearning:
-    def __init__(self, global_model, all_clients:List[Client], test_data, device="cpu", iid=True, track_observations=False, beta=1, alpha=1, tau_min=0.1):
+    def __init__(self, global_model, all_clients:List[Client], test_data, device="cpu", iid=True, track_observations=False, beta=1, alpha=1, tau_min=0.1, tb_writer:SummaryWriter=None):
         self.device = device
         self.global_model = global_model
         self.global_model.to(self.device)
@@ -34,6 +34,7 @@ class FederatedLearning:
         self.track_observations = [] if track_observations else False
         self.iid = iid
         self.tau_min = tau_min
+        self.tb_writer = tb_writer
 
         self.test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
         self.results = {'accuracy':[], 'loss':[], 'time':[], 'iters':[], "track observations": self.track_observations}
@@ -47,12 +48,11 @@ class FederatedLearning:
         # for regret analysis:
         self.alpha = alpha
         self.beta = beta
+        self.data_size = np.array([client.data_size for client in all_clients])
         if not iid:
             self.data_quality = np.array([client.q for client in all_clients])
-            self.data_size = np.array([client.data_size for client in all_clients])
             self.sum_importance = np.sum(self.data_size * self.data_quality)
         else:
-            self.data_size = None
             self.data_quality = None
 
 
@@ -121,16 +121,23 @@ class FederatedLearning:
 
         if isinstance(acc, float):
             self.results['accuracy'].append(acc)
+            if self.tb_writer:
+                self.tb_writer.add_scalar("accuracy", acc, time)
+
         self.results['loss'].append(loss.item())
         self.results['time'].append(time)
         self.results['iters'].append(iters)
 
-        print("____________________________________________")
-        for key, val in self.results.items():
-            if isinstance(val, list) and val!=[]:
-                print(f"{key}: {val[-1]}")
-            else:
-                print(f"{key}: {val}")
+        if self.tb_writer:
+            self.tb_writer.add_scalar("loss", loss, time)
+            self.tb_writer.add_scalar("iters", iters, time)
+
+        # print("____________________________________________")
+        # for key, val in self.results.items():
+        #     if isinstance(val, list) and val!=[]:
+        #         print(f"{key}: {val[-1]}")
+        #     else:
+        #         print(f"{key}: {val}")
 
 
     def selection_alg_warmup(self, client_selection_method, iters):
@@ -151,10 +158,10 @@ class FederatedLearning:
     def train(self, selection_size, client_selection_method:Client_Selection, total_time, time_bt_eval=3, warmup_selection_alg=0, calc_regret=False, lr=0.001):
         self.results['total_time'] = total_time
         time_left = total_time
-        iter = warmup_selection_alg
-        last_lr = lr/50
+        iter = warmup_selection_alg + 1
+        last_lr = lr / 100    # TODO change to lower last_lr
         lr_decay = (last_lr/lr)**(1/(total_time/time_bt_eval))
-
+        warmup_n_observations = client_selection_method.n_observations.copy()
         # regret analysis
         if calc_regret:
             self.results["regret"] = []
@@ -162,6 +169,7 @@ class FederatedLearning:
         self.evaluate_global_model(iter, total_time - time_left)
         last_time_eval = time_left
 
+        pbar = tqdm(total=total_time)
         while time_left > 0:
             selected_clients_indices = client_selection_method.select_clients()
             time_left -= client_selection_method.selection_communication_time
@@ -169,12 +177,13 @@ class FederatedLearning:
             initial_weights = self.distribute_model()
 
             # Initialize client_updates with zeros
-            client_updates = {k: torch.zeros_like(v).to(self.device) for k, v in initial_weights.items()}
+            client_updates = {k: torch.zeros_like(v, dtype=torch.float32).to(self.device) for k, v in
+                              initial_weights.items()}
             # coef = self.data_size[selected_clients_indices] / self.data_size[selected_clients_indices].sum()
 
             # train selection
             trained_dict = {'iter_times':[None]*selection_size, "loss":[None]*selection_size}
-            for i, client in tqdm(enumerate(selected_clients)):
+            for i, client in enumerate(selected_clients):
                 client.local_model.load_state_dict(initial_weights)
                 local_optimizer = optim.Adam(client.local_model.parameters(), lr=lr)
                 iter_time, client_trained_dict = client.train(local_optimizer, self.criterion)
@@ -194,9 +203,12 @@ class FederatedLearning:
             self.aggregate_models(client_updates)
 
             # update time and iters and eval
-            time_left -= max(trained_dict["iter_times"])
+            total_iter_time = max(trained_dict["iter_times"])
+            time_left -= total_iter_time
             if time_left < last_time_eval-time_bt_eval or time_left<0:
                 self.evaluate_global_model(iter, total_time-time_left)
+                array_str = ', '.join(map(str, client_selection_method.n_observations - warmup_n_observations))
+                self.tb_writer.add_text('n_observations', array_str)
                 last_time_eval = time_left
                 lr = lr * lr_decay
 
@@ -205,8 +217,14 @@ class FederatedLearning:
                 self.results["regret"].append(self.calc_curr_regret(client_selection_method, iter))
 
             iter += 1
+            pbar.update(total_iter_time)
 
+        pbar.close()
         self.results["n_observations"] = client_selection_method.n_observations
+
+        if self.tb_writer:
+            self.tb_writer.close()
+
         return self.results
 
 

@@ -2,6 +2,7 @@ import os
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 
 def read_pkl_files(dir_path):
     data_dicts = {}
@@ -44,8 +45,48 @@ def plot_data(data_dicts, window_size=1):
 
 
 if __name__ == '__main__':
-    # dir_path, param = '../results/param_compare/2024-08-03_21:21_beta=[0.1, 1, 2, 10]', 'beta'  # Replace with your directory path
-    dir_path = '../results/methods_compare/2024-08-08_18:08__iid__cifar10__500_25__20t__lr3'  # Replace with your directory path
-    data_dicts = read_pkl_files(dir_path)
-    plot_data(data_dicts)
-    plt.show(block=True)
+    # # Get a list of all subdirectories in the root directory
+    # root_dir = r'../results/methods_compare/lin_reg'
+    # subdirs = [Path(root_dir) / d for d in os.listdir(root_dir) if os.path.isdir(Path(root_dir) / d)]
+    # # Sort the subdirectories by creation time
+    # subdirs_sorted = sorted(subdirs, key=os.path.getctime)
+    # # Get the last subdirectory created
+    # dir_path = subdirs_sorted[-4]
+    #
+    # # dir_path = r'../results/param_compare/lin_reg/'  # Replace with your directory path
+    # print(dir_path)
+    # data_dicts = read_pkl_files(dir_path)
+    # plot_data(data_dicts)
+    # plt.show(block=True)
+
+    # # Define the root directory
+    root_dir = r'../results/methods_compare/lin_reg'
+    subdirs = [Path(root_dir) / d for d in os.listdir(root_dir) if os.path.isdir(Path(root_dir) / d)]
+    # Sort the subdirectories by creation time
+    subdirs_sorted = sorted(subdirs, key=os.path.getctime)[::-1]
+    # Loop through each folder in the directory
+    for dir_path in subdirs_sorted:
+        if os.path.isfile(dir_path):
+            continue
+
+        # Ensure it's a directory
+        if os.path.isdir(dir_path):
+            # Extract the parameter (alpha or beta) from the folder name
+            if '__iid' not in str(dir_path):
+                continue
+
+        try:
+            print(dir_path)
+            data_dicts = read_pkl_files(dir_path)
+            plot_data(data_dicts)
+            plt.show(block=False)
+            tmp = 0
+            plt.show(block=True)
+        except:
+            print("didn't managed to check dir. moving to next dir.")
+
+
+
+
+    tmp = 3
+
