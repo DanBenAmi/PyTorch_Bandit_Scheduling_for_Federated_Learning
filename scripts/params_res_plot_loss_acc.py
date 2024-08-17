@@ -44,8 +44,35 @@ def plot_data(data_dicts, window_size=10, param='alpha'):
 
 
 if __name__ == '__main__':
-    # dir_path = '../results/param_compare/2024-08-03_09:12_beta=[0.1, 1, 2, 10]'  # Replace with your directory path
-    dir_path = '../results/param_compare/2024-08-03_09:11_alpha=[0, 0.1, 1, 10, 100]'  # Replace with your directory path
-    data_dicts = read_pkl_files(dir_path)
-    plot_data(data_dicts, param='alpha')
-    plt.show(block=True)
+    # dir_path, param = '../results/param_compare/2024-08-03_21:21_beta=[0.1, 1, 2, 10]', 'beta'  # Replace with your directory path
+    # dir_path, param = '../results/param_compare/2024-08-03_21:21_alpha=[0, 0.1, 1, 10, 100]', 'alpha'  # Replace with your directory path
+    # data_dicts = read_pkl_files(dir_path)
+    # plot_data(data_dicts, param=param)
+    # plt.show(block=True)
+
+    # Define the root directory
+    root_dir = '../results/param_compare'
+
+    # Loop through each folder in the directory
+    for folder_name in os.listdir(root_dir):
+        dir_path = os.path.join(root_dir, folder_name)
+
+        if os.path.isfile(dir_path):
+            continue
+
+        # Ensure it's a directory
+        if os.path.isdir(dir_path):
+            # Extract the parameter (alpha or beta) from the folder name
+            if 'alpha' in folder_name:
+                param = 'alpha'
+            elif 'beta' in folder_name:
+                param = 'beta'
+
+        try:
+            print(dir_path)
+            data_dicts = read_pkl_files(dir_path)
+            plot_data(data_dicts, param=param)
+            plt.show(block=True)
+        except:
+            print("didn't managed to check dir. moving to next dir.")
+

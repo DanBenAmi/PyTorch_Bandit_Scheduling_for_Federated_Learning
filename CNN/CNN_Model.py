@@ -14,6 +14,8 @@ class CNNModel(nn.Module):
     def __init__(self, input_shape, num_classes):
         super(CNNModel, self).__init__()
         self.input_shape = input_shape
+        if self.input_shape[0]>3:
+            self.input_shape = (1, *input_shape)
 
         self.conv1 = nn.Conv2d(input_shape[0], 32, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)

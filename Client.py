@@ -20,18 +20,22 @@ from scipy.special import comb
 class Client:
     ''' Client object represent a client in the FL training process, each client holds a data and labels, the server
      holds the g function value, the ucb, the counter of the participation and the id of every client'''
-    def __init__(self, id, data, local_model, mean_std_time, device="cpu", q=1):
+    def __init__(self, id, data, local_model, mean_std_rate, device="cpu", q=1, tau_min=0.1, data_size=False):
         # -------------------------- inside client -----------------------------------------
         self.data = data
         self.local_model = local_model
         self.q = q  # Quality of the data
-        self.mean_time = mean_std_time[0]
-        self.std_time = mean_std_time[1]
+        self.mean_rate = mean_std_rate[0]
+        self.std_rate = mean_std_rate[1]
         self.device = device
-        self.batch_size = 16
+        self.batch_size = 32
         # -------------------------- in the server -----------------------------------------
         self.id = id  # ID i.e. idx in all_clients list
-        self.data_size = len(data)
+        if data_size:
+            self.data_size = data_size
+        else:
+            self.data_size = len(data)
+        self.tau_min = tau_min
 
     def train(self, optimizer, criterion, epochs=1):
         self.local_model.train()
@@ -49,7 +53,7 @@ class Client:
                 # Debug: Print loss values
                 # print(f"Client {self.client_id}, Epoch {epoch}, Loss: {loss.item()}")
         mean_loss = np.mean(batch_losses)    # Calculate mean loss
-        iter_time = np.clip(np.random.normal(self.mean_time, self.std_time), 0.1, 1)  # Simulate iteration time
+        iter_time = np.clip(self.tau_min/np.random.normal(self.mean_rate, self.std_rate), self.tau_min, 1)  # Simulate iteration time
         return iter_time, {"loss":mean_loss}
 
 

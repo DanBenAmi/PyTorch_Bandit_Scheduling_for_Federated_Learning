@@ -15,11 +15,12 @@ class Client_Selection:
         self.selection_size = selection_size
         self.last_selection_indices = []
         self.n_observations = np.array([0]*n_clients)
+        self.selection_communication_time = 0
 
 
 
-    def select_clients(self, all_clients):
-        return clients_indices
+    def select_clients(self):
+        return None
 
     def post_iter_process(self, _):
         self.n_observations[self.last_selection_indices] += 1
@@ -52,7 +53,7 @@ class BSFL(Client_Selection):
         energy = ucbs.min() + self.alpha * gs.mean()
         return energy
 
-    def simulated_annealing(self, iters, climb_iters=5, ret_max=True):
+    def simulated_annealing(self, iters, climb_iters=50, ret_max=True):
         selection_indices = list(np.random.choice(self.n_clients, self.selection_size, replace=False))
         selection_energy = self.calc_indices_energy(selection_indices)  # initial random selection
         k = 1
@@ -62,7 +63,7 @@ class BSFL(Client_Selection):
         history = [0] * (iters + self.n_clients * climb_iters - 1)
         max_energy = -1 * float('inf')
         max_idxes = []
-        while k < iters + self.n_clients * climb_iters:
+        while k < iters + np.sqrt(self.n_clients) * climb_iters:
             history[k - 1] = selection_energy
             k += 1
             new_client_num = np.random.choice(list(set(range(self.n_clients)) - set(selection_indices)))  # new client num
@@ -236,6 +237,10 @@ class RBCS_F(Client_Selection):
         self.x = np.zeros(n_clients)
         self.V = 5
         self.tau_bar = np.zeros(n_clients)
+        # A typical TCP handshake involves several steps: SYN, SYN-ACK, and ACK. Let's assume that each handshake takes
+        # approximately 20 milliseconds, which is a reasonable estimate for a basic network round-trip time.
+        # therefore in each round, for each client to send the context is 0.02, in selection_size orthogonal channels.
+        self.selection_communication_time = 0.02 * n_clients / selection_size / 5 # we supppose the training time is between 1 sec to 10 sec and it is normalized..
 
     def __repr__(self):
         return "RBCS-F"
@@ -265,7 +270,7 @@ class RBCS_F(Client_Selection):
             # c = [1⁄mu , s , M/B] where mu is available CPU ratio of the client, s is A binary indicator indicates if
             # client n has participated in training in the last round, M is the size of the model’s parameters
             # (measured by bit) and B indicates the allocated bandwidth.
-            mu = np.clip(1-np.random.normal(self.all_clients[id].mean_time, self.all_clients[id].std_time*3)+np.random.randn()/5,0.1,1) # assume CPU is proportional to the actual time but with
+            mu = np.clip(np.random.normal(self.all_clients[id].mean_rate, self.all_clients[id].std_rate*6)+np.random.randn()/5,0.1,1) # assume CPU is proportional to the actual time but with
             self.c[id] = np.array([1/mu, self.x[id], 1])
             self.tau_hat[id] = self.c[id].transpose()@self.theta_hat[id]
             self.tau_bar[id] = self.tau_hat[id] - \
