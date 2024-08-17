@@ -40,7 +40,7 @@ class FederatedLearning:
         self.results = {'accuracy':[], 'loss':[], 'time':[], 'iters':[], "track observations": self.track_observations}
 
         # set criterion
-        if len(self.test_loader.dataset[0][0].size()) == 1:  # data is 1d vector (linear regression task)
+        if bool(test_data) and len(self.test_loader.dataset[0][0].size()) == 1:  # data is 1d vector (linear regression task)
             self.criterion = nn.MSELoss()
         else:
             self.criterion = nn.CrossEntropyLoss()
@@ -140,8 +140,8 @@ class FederatedLearning:
         #         print(f"{key}: {val}")
 
 
-    def selection_alg_warmup(self, client_selection_method, iters):
-        for iter in tqdm(range(1, iters+1), desc="selection algorithm warmup iterations"):
+    def selection_alg_warmup(self, client_selection_method, iters, iters_bt_save=100, curr_iter=0):
+        for iter in tqdm(range(curr_iter, curr_iter+iters), desc="selection algorithm warmup iterations"):
             trained_dict = {'iter_times':[None]*client_selection_method.selection_size}
             selected_clients_indices = client_selection_method.select_clients()
             selected_clients = [self.all_clients[i] for i in selected_clients_indices]
@@ -151,7 +151,7 @@ class FederatedLearning:
             trained_dict["iter"] = iter
             client_selection_method.post_iter_process(trained_dict)
             if isinstance(self.track_observations, list):
-                if iter % 100 == 0:
+                if iter % iters_bt_save == 0:
                     self.track_observations.append(client_selection_method.n_observations.copy())
 
 

@@ -2,7 +2,7 @@ import numpy as np
 import sys
 import os
 from typing import List
-
+import math
 from Client import *
 
 
@@ -62,7 +62,6 @@ class BSFL(Client_Selection):
         cntr3 = 0
         history = [0] * (iters + self.n_clients * climb_iters - 1)
         max_energy = -1 * float('inf')
-        max_idxes = []
         while k < iters + np.sqrt(self.n_clients) * climb_iters:
             history[k - 1] = selection_energy
             k += 1
@@ -86,7 +85,7 @@ class BSFL(Client_Selection):
             else:
                 cntr3 += 1
 
-            if ret_max and selection_energy > max_energy:
+            if ret_max and selection_energy >= max_energy:
                 max_energy = selection_energy
                 max_indices = selection_indices
 
@@ -121,9 +120,9 @@ class BSFL(Client_Selection):
         self.mu_rate[self.last_selection_indices] = (self.mu_rate[self.last_selection_indices] * self.n_observations[self.last_selection_indices] + curr_rates) / (self.n_observations[self.last_selection_indices]+1)
         self.n_observations[self.last_selection_indices] += 1
 
-        # updata all clients g and ucb
+        # update all clients g and ucb
         for client in range(self.n_clients):
-            if self.n_observations[client] > 0:
+            if self.n_observations[client] > 0 and iter > 0:
                 self.ucb[client] = self.mu_rate[client] + np.sqrt((self.selection_size + 1) * np.log(iter) / self.n_observations[client])
                 if self.iid:
                     self.g[client] = np.abs(self.selection_size / self.n_clients - self.n_observations[client] / iter) ** self.beta * np.sign(
