@@ -60,8 +60,8 @@ def selection_methods_compare(cs_methods, css_args, time_bulks, n_clients, selec
     slow_clients_relation = 0.2  # iid: 0.2     non: 0.2
     all_clients_dists = np.concatenate((
         np.random.uniform(low=[0.93, 0], high=[0.97, 0.03], size=(round(n_clients * fast_clients_relation), 2)),
-        np.random.uniform(low=[0.1, 0], high=[0.1, 0.03], size=(round(n_clients * slow_clients_relation), 2)),
-        np.random.uniform(low=[0.5, 0], high=[0.55, 0.02],
+        np.random.uniform(low=[0.1, 0], high=[0.12, 0.03], size=(round(n_clients * slow_clients_relation), 2)),
+        np.random.uniform(low=[0.7, 0], high=[0.8, 0.03],
                           size=(round(n_clients * (1 - slow_clients_relation - fast_clients_relation)), 2))
     ))
     # all_clients_dists = np.concatenate((
@@ -78,12 +78,15 @@ def selection_methods_compare(cs_methods, css_args, time_bulks, n_clients, selec
     # save initialization
     # with open(os.path.join(res_dir, f"compare_init.pkl"), 'wb') as f:
     #     pickle.dump({"all_clients": all_clients, "global_weights": global_weights}, f)
+
+    run_dict = {"lr": lr, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, **css_args[0]}
     print(datetime.now().strftime("%Y-%m-%d_%H:%M"), "\n", {"lr": lr, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation}, "\n", css_args[0])
     # bsfl_loss, bsfl_acc = None, None
     alpha, beta = css_args[0]['alpha'], css_args[0]['beta']
     for cs_method, args in zip(cs_methods, css_args):
         tb_dir = os.path.join(res_dir, f"tb_{cs_method}")
         writer = SummaryWriter(log_dir=tb_dir)
+        writer.add_hparams(run_dict, {})
 
         res = args.copy()
         res.update({'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation})
@@ -117,7 +120,7 @@ def selection_methods_compare(cs_methods, css_args, time_bulks, n_clients, selec
 if __name__ == "__main__":
     css = [BSFL, cs_ucb, RBCS_F, PowerOfChoice, Random_Selection]
     css_args = [
-        {'warmup_iters': 35000, 'beta': 2, 'alpha': 0.1},
+        {'warmup_iters': 0, 'beta': 2, 'alpha': 0.1},
         {'warmup_iters': 35000},
         {'warmup_iters': 35000},
         {'warmup_iters': 0},

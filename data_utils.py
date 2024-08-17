@@ -79,17 +79,19 @@ def distribute_datapoints(total_datapoints, n_clients, skewness):
     return datapoints.tolist()
 
 
-def split_data(dataset, n_clients, iid=True, dataset_name='lin_reg'):
+def split_data(dataset, n_clients, iid=True, dataset_name='lin_reg', data_sizes=None, qs=None):
     if iid:
         client_datasets = random_split(dataset, [len(dataset) // n_clients] * n_clients)
         qs = [None]*n_clients
 
     if not iid:
-        # data sizes
-        data_sizes = np.array(distribute_datapoints(len(dataset), n_clients, 2 / n_clients))
-        np.random.shuffle(data_sizes)
+        if not data_sizes:
+            data_sizes = np.array(distribute_datapoints(len(dataset), n_clients, 2 / n_clients))
+            np.random.shuffle(data_sizes)
+
         # quality levels
-        qs = [random.uniform(0.5, 1) for _ in range(n_clients)]  # Random noise levels between 0 and 1 for each client
+        if not qs:
+            qs = [random.uniform(0.5, 1) for _ in range(n_clients)]  # Random noise levels between 0 and 1 for each client
 
         client_datasets = random_split(dataset, data_sizes)
 
