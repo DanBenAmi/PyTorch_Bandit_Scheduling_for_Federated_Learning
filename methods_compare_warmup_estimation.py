@@ -105,8 +105,9 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         # client selection method
         warmup_iters = args.pop('warmup_iters')
         selection_method = cs_method(all_clients, total_time, n_clients, selection_size, iid, **args)
-        selection_method.update_n_obs_warmup(warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, all_clients_dists, T=T)
         if warmup_iters:
+            selection_method.update_n_obs_warmup(warmup_iters, slow_mid_fast_means, slow_mid_fast_relations,
+                                                 all_clients_dists, T=T)
             fl_simulation.selection_warmup_til_all_selected(selection_method, curr_iter=warmup_iters)
         warmup_n_observations = selection_method.n_observations.copy()
 
@@ -144,7 +145,7 @@ if __name__ == "__main__":
     fast_relation = 0.05    # [0.05, 0.02, 0.1]
     slow_relation = 0.1     # [0.2, 0.1]
     mid_clients_mean = (0.15, 0.2)   # [(0.15, 0.2), (0.75, 0.8), (0.4, 0.45), (0.15, 0.6)]
-    warmup_temperature = [1, 0.1, 5, 0, 0]
+    warmup_temperature = [1, 0.1, 5, 0, 0]  # for 1e6 warmup iters [1, 0.1, 5, 0, 0]
 
 
     selection_methods_compare(css, css_args, time_bulks, n_clients, selection_size, dataset_name=dataset_name, iid=iid,

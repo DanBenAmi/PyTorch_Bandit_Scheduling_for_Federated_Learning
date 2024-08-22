@@ -34,17 +34,10 @@ class Client_Selection:
         return exp_x / np.sum(exp_x)
 
     def update_n_obs_warmup(self, warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists, T=0.1):   # BSFL:T=1
-        # n_obs = np.concatenate((
-        #     np.ones(int(self.n_clients*slow_mid_fast_relations[0]))* slow_mid_fast_means[0],
-        #     np.ones(int(self.n_clients*slow_mid_fast_relations[1]))* slow_mid_fast_means[1],
-        #     np.ones(int(self.n_clients*slow_mid_fast_relations[2]))* slow_mid_fast_means[2]
-        # ))
         n_obs = dists[:,0]
         n_obs = self.softmax_with_temperature(n_obs, T)
         n_obs = n_obs * warmup_iters * self.selection_size
         self.n_observations = n_obs.astype(int)
-        # self.n_observations = np.ones(self.n_clients)*int(self.selection_size * warmup_iters / self.n_clients)
-        self.mu_rate = np.random.normal(loc=dists[:,0], scale=dists[:,1]/warmup_iters)
 
 
 class BSFL(Client_Selection):
@@ -75,40 +68,42 @@ class BSFL(Client_Selection):
         return energy
 
     def simulated_annealing(self, iters, climb_iters=50, ret_max=True):
-        selection_indices = list(np.random.choice(self.n_clients, self.selection_size, replace=False))
-        selection_energy = self.calc_indices_energy(selection_indices)  # initial random selection
-        k = 1
-        cntr1 = 0
-        cntr2 = 0
-        cntr3 = 0
-        history = [0] * (iters + self.n_clients * climb_iters - 1)
+        n_iters = int(iters//5)
         max_energy = -1 * float('inf')
-        while k < iters + np.sqrt(self.n_clients) * climb_iters:
-            history[k - 1] = selection_energy
-            k += 1
-            new_client_num = np.random.choice(list(set(range(self.n_clients)) - set(selection_indices)))  # new client num
-            new_selection_indices = selection_indices.copy() + [new_client_num]
-            if bool(random.getrandbits(1)):
-                client_to_remove = selection_indices[self.ucb[selection_indices].argmin()]
-            else:
-                client_to_remove = selection_indices[self.g[selection_indices].argmin()]
-            new_selection_indices.remove(client_to_remove)
-            new_energy = self.calc_indices_energy(new_selection_indices)
-            T = 1 - ((k + 1) / 5000) ** 0.02  # 2/np.log(k)    #1- ((k+1)/iters)**0.5     #1-(k+1)/iters
-            if selection_energy < new_energy:
-                cntr1 += 1
-                selection_indices = new_selection_indices
-                selection_energy = new_energy
-            elif np.e ** ((new_energy - selection_energy) / T) > random.uniform(0, 1) and k < iters:
-                cntr2 += 1
-                selection_indices = new_selection_indices
-                selection_energy = new_energy
-            else:
-                cntr3 += 1
+        for i in range(5):
+            selection_indices = list(np.random.choice(self.n_clients, self.selection_size, replace=False))
+            selection_energy = self.calc_indices_energy(selection_indices)  # initial random selection
+            k = 1
+            cntr1 = 0
+            cntr2 = 0
+            cntr3 = 0
+            history = [0] * (n_iters + self.n_clients * climb_iters - 1)
+            while k < n_iters + np.sqrt(self.n_clients) * climb_iters:
+                history[k - 1] = selection_energy
+                k += 1
+                new_client_num = np.random.choice(list(set(range(self.n_clients)) - set(selection_indices)))  # new client num
+                new_selection_indices = selection_indices.copy() + [new_client_num]
+                if bool(random.getrandbits(1)):
+                    client_to_remove = selection_indices[self.ucb[selection_indices].argmin()]
+                else:
+                    client_to_remove = selection_indices[self.g[selection_indices].argmin()]
+                new_selection_indices.remove(client_to_remove)
+                new_energy = self.calc_indices_energy(new_selection_indices)
+                T = 1 - ((k + 1) / 5000) ** 0.02  # 2/np.log(k)    #1- ((k+1)/iters)**0.5     #1-(k+1)/iters
+                if selection_energy < new_energy:
+                    cntr1 += 1
+                    selection_indices = new_selection_indices
+                    selection_energy = new_energy
+                elif np.e ** ((new_energy - selection_energy) / T) > random.uniform(0, 1) and k < n_iters:
+                    cntr2 += 1
+                    selection_indices = new_selection_indices
+                    selection_energy = new_energy
+                else:
+                    cntr3 += 1
 
-            if ret_max and selection_energy >= max_energy:
-                max_energy = selection_energy
-                max_indices = selection_indices
+                if ret_max and selection_energy >= max_energy:
+                    max_energy = selection_energy
+                    max_indices = selection_indices
 
         # print(f"Simulated Annealing: up steps:{cntr1}, down steps:{cntr2}, stay steps:{cntr3}")
         if ret_max:
@@ -150,6 +145,24 @@ class BSFL(Client_Selection):
                         self.selection_size / self.n_clients - self.n_observations[client] / iter)
                 else:
                     tmp_res = self.selection_size * self.data_size[client] * self.data_quality[client] / self.sum_importance - self.n_observations[client] / iter
+                    self.g[client] = np.abs(tmp_res) ** self.beta * np.sign(tmp_res)
+
+    def update_n_obs_warmup(self, warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists, T):
+        super().update_n_obs_warmup(warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists, T)
+        self.mu_rate = np.random.normal(loc=dists[:,0], scale=dists[:,1]/warmup_iters)
+
+        # update all clients g and ucb
+        for client in range(self.n_clients):
+            if self.n_observations[client] > 0 and warmup_iters > 0:
+                self.ucb[client] = self.mu_rate[client] + np.sqrt(
+                    (self.selection_size + 1) * np.log(warmup_iters) / self.n_observations[client])
+                if self.iid:
+                    self.g[client] = np.abs(self.selection_size / self.n_clients - self.n_observations[
+                        client] / warmup_iters) ** self.beta * np.sign(
+                        self.selection_size / self.n_clients - self.n_observations[client] / warmup_iters)
+                else:
+                    tmp_res = self.selection_size * self.data_size[client] * self.data_quality[
+                        client] / self.sum_importance - self.n_observations[client] / warmup_iters
                     self.g[client] = np.abs(tmp_res) ** self.beta * np.sign(tmp_res)
 
 
