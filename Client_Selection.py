@@ -3,6 +3,8 @@ import sys
 import os
 from typing import List
 import math
+from scipy.optimize import least_squares
+
 from Client import *
 
 
@@ -16,6 +18,7 @@ class Client_Selection:
         self.last_selection_indices = []
         self.n_observations = np.array([0]*n_clients)
         self.selection_communication_time = 0
+        self.mu_rate = np.array([0] * n_clients, dtype=np.float32) # clients' averages iteration rate
 
 
 
@@ -25,12 +28,30 @@ class Client_Selection:
     def post_iter_process(self, _):
         self.n_observations[self.last_selection_indices] += 1
 
+    def softmax_with_temperature(self, x, temperature):
+        x_scaled = x / temperature
+        exp_x = np.exp(x_scaled)
+        return exp_x / np.sum(exp_x)
+
+    def update_n_obs_warmup(self, warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists, T=0.1):   # BSFL:T=1
+        # n_obs = np.concatenate((
+        #     np.ones(int(self.n_clients*slow_mid_fast_relations[0]))* slow_mid_fast_means[0],
+        #     np.ones(int(self.n_clients*slow_mid_fast_relations[1]))* slow_mid_fast_means[1],
+        #     np.ones(int(self.n_clients*slow_mid_fast_relations[2]))* slow_mid_fast_means[2]
+        # ))
+        n_obs = dists[:,0]
+        n_obs = self.softmax_with_temperature(n_obs, T)
+        n_obs = n_obs * warmup_iters * self.selection_size
+        self.n_observations = n_obs.astype(int)
+        # self.n_observations = np.ones(self.n_clients)*int(self.selection_size * warmup_iters / self.n_clients)
+        self.mu_rate = np.random.normal(loc=dists[:,0], scale=dists[:,1]/warmup_iters)
+
 
 class BSFL(Client_Selection):
     def __init__(self, all_clients, total_time, n_clients, selection_size, iid, alpha=1, beta=5, tau_min=0.1):
         super().__init__(total_time, n_clients, selection_size)
         self.iid = iid
-        self.mu_rate = np.array([0] * n_clients, dtype=np.float32) # clients' averages iteration times
+        self.mu_rate = np.array([0] * n_clients, dtype=np.float32) # clients' averages iteration rate
         self.ucb = np.array([100000] * n_clients, dtype=np.float32)
         self.g = np.array([100000] * n_clients, dtype=np.float32)
         self.n_observations = np.array([0] * n_clients) # clients' selected counter (C_k for k in K)
@@ -106,7 +127,7 @@ class BSFL(Client_Selection):
 
         else:
             # main loop:
-            selected_indices = self.simulated_annealing(iters=1000)
+            selected_indices = self.simulated_annealing(iters=5000)     #TODO change iters to 1000
 
         self.last_selection_indices = selected_indices
         return selected_indices
@@ -130,6 +151,7 @@ class BSFL(Client_Selection):
                 else:
                     tmp_res = self.selection_size * self.data_size[client] * self.data_quality[client] / self.sum_importance - self.n_observations[client] / iter
                     self.g[client] = np.abs(tmp_res) ** self.beta * np.sign(tmp_res)
+
 
 
 class cs_ucb(Client_Selection):
@@ -216,6 +238,37 @@ class cs_ucb(Client_Selection):
                     self.ucb[client] = self.sample_mean_reward[client] + np.sqrt(
                         2 * np.log(iter) / self.n_observations[client])
 
+    # def update_n_obs_warmup(self, warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists):
+    #     def equations(vars):
+    #         n_obs = vars
+    #         common_expr = slow_mid_fast_means[0] + np.sqrt(((self.selection_size + 1) * np.log(warmup_iters)) / n_obs[0])
+    #
+    #         eqs = []
+    #         # Common equality for all mu + sqrt(((m+1)*ln t)/x_i)
+    #         for i in range(1, len(n_obs)):
+    #             eqs.append(slow_mid_fast_means[i] + np.sqrt(((self.selection_size + 1) * np.log(warmup_iters)) / n_obs[i]) - common_expr)
+    #
+    #         # Linear sum constraint
+    #         eq_sum = slow_mid_fast_relations @ n_obs - (self.selection_size * warmup_iters / self.n_clients)
+    #         eqs.append(eq_sum)
+    #
+    #         return eqs
+    #
+    #     initial_guesses = [1e4, warmup_iters/1e4, warmup_iters]
+    #     result = least_squares(equations, initial_guesses, bounds=(0, np.inf))
+    #     n_obs_per_group = result.x
+    #     self.n_observations = np.concatenate((
+    #         np.ones(int(self.n_clients*slow_mid_fast_relations[0]))*int(n_obs_per_group[0]),
+    #         np.ones(int(self.n_clients*slow_mid_fast_relations[1]))*int(n_obs_per_group[1]),
+    #         np.ones(int(self.n_clients*slow_mid_fast_relations[2]))*int(n_obs_per_group[2])
+    #     ))
+    #     self.sample_mean_reward = 1 - 0.1/np.random.normal(loc=dists[:,0], scale=dists[:,1]/warmup_iters)
+
+    def update_n_obs_warmup(self, warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists, T):
+        super().update_n_obs_warmup(warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists, T)
+        self.sample_mean_reward = 1 - 0.1/np.random.normal(loc=dists[:,0], scale=dists[:,1]/warmup_iters)
+
+
 
 class RBCS_F(Client_Selection):
     def __init__(self, all_clients, total_time, n_clients, selection_size, iid):
@@ -285,6 +338,11 @@ class RBCS_F(Client_Selection):
         for i, id in enumerate(self.last_selection_indices):
             self.H_of_clients[id] += self.x[id] * self.c[id] @ self.c[id].transpose()
             self.b[id] += self.x[id] * iter_times[i] * self.c[id]
+
+    def update_n_obs_warmup(self, warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists, T):
+        super().update_n_obs_warmup(warmup_iters, slow_mid_fast_means, slow_mid_fast_relations, dists, T)
+        self.tau_hat = 1 - 0.1/np.random.normal(loc=dists[:,0], scale=dists[:,1]/warmup_iters)
+
 
 
 class Random_Selection(Client_Selection):

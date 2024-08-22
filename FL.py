@@ -154,6 +154,27 @@ class FederatedLearning:
                 if iter % iters_bt_save == 0:
                     self.track_observations.append(client_selection_method.n_observations.copy())
 
+    def selection_warmup_til_all_selected(self, client_selection_method, curr_iter=0):
+        initial_n_obs = client_selection_method.n_observations.copy()
+        curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
+        p_bar = tqdm()
+        while np.any(curr_warmup_obs < 1):  # until each client chosen twice.
+            trained_dict = {'iter_times': [None] * client_selection_method.selection_size}
+            selected_clients_indices = client_selection_method.select_clients()
+            selected_clients = [self.all_clients[i] for i in selected_clients_indices]
+            for i, client in enumerate(selected_clients):
+                iter_time = np.clip(self.tau_min / np.random.normal(client.mean_rate, client.std_rate), self.tau_min, 1)
+                trained_dict["iter_times"][i] = iter_time
+            trained_dict["iter"] = curr_iter
+            client_selection_method.post_iter_process(trained_dict)
+            curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
+            client_selection_method.n_observations += 1098*(curr_warmup_obs > 0).astype(int)
+            client_selection_method.post_iter_process(trained_dict)
+            curr_iter += 100
+            p_bar.update(1)
+        # client_selection_method.post_iter_process(trained_dict)
+        p_bar.close()
+        return curr_iter
 
     def train(self, selection_size, client_selection_method:Client_Selection, total_time, time_bt_eval=3, warmup_selection_alg=0, calc_regret=False, lr=0.001):
         self.results['total_time'] = total_time
