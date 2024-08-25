@@ -92,12 +92,14 @@ def warmup_exp(warmup_iters, iters_bt_save, iid, n_clients__sel_size, fast_clien
 css = [BSFL, cs_ucb, RBCS_F]
 
 exp_parameters = {
-"iid": [True, False],
-"n_clients__sel_size": [(1000, 10),(500,25)],
-"fast_clients_relation":[0.05, 0.02, 0.1],
+"iid": [True],  # True/ False
+"n_clients__sel_size": [(500, 25)],    # (1000, 10),(500,25)
+"fast_clients_relation":[0.05, 0.1],    # [0.02, 0.05, 0.1]
 "slow_clients_relation": [0.2, 0.1],
-"mid_clients_mean": [(0.15, 0.2), (0.75, 0.8), (0.4, 0.45), (0.15, 0.6)],
+"mid_clients_mean": [(0.15, 0.2), (0.75, 0.8), (0.15, 0.6)],
 }
+
+print( exp_parameters)
 
 # Generate all combinations of hyperparameter values
 keys, values = zip(*exp_parameters.items())
@@ -106,10 +108,11 @@ combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
 # Number of combinations
 print(f"Total combinations: {len(combinations)}")
 
-warmup_iters, iters_bt_save = 300, 100
+warmup_iters, iters_bt_save = 60000, 5000
 
 # Example loop to evaluate each combination
 for idx, combo in enumerate(combinations):
+    print(f"combo number {idx} out of {len(combinations)}")
     warmup_exp(warmup_iters, iters_bt_save, **combo)
 
 

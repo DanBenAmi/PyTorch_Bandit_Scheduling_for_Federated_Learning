@@ -16,9 +16,74 @@ from itertools import combinations
 from scipy.special import comb
 from torch.optim.lr_scheduler import CosineAnnealingLR  # Add this import
 from torch.utils.tensorboard import SummaryWriter
+import math
 
 from Client import *
 from Client_Selection import *
+
+
+class LRScheduler:
+    def __init__(self, scheduler_type: str, **kwargs):
+        self.scheduler_type = scheduler_type
+        self.kwargs = kwargs
+        self.current_iter = 0
+        self.lr = self.kwargs.get('first_lr', 0.001)  # Default to 0.001 if not provided
+
+        if scheduler_type == 'regular_decay':
+            self.first_lr = self.kwargs['first_lr']
+            self.last_lr = self.kwargs['last_lr']
+            self.num_iters = self.kwargs['num_iters']
+            self.decay_factor = (self.last_lr / self.first_lr) ** (1 / self.num_iters)
+
+        # Add other scheduler types initialization here
+        elif scheduler_type == 'exponential_decay':
+            self.base_lr = self.kwargs['base_lr']
+            self.gamma = self.kwargs['gamma']
+
+        elif scheduler_type == 'step_decay':
+            self.base_lr = self.kwargs['base_lr']
+            self.step_size = self.kwargs['step_size']
+            self.gamma = self.kwargs['gamma']
+
+        elif scheduler_type == 'cosine_annealing':
+            self.T_max = self.kwargs['T_max']
+            self.eta_min = self.kwargs['eta_min']
+
+        elif scheduler_type == 'cyclic_lr':
+            self.base_lr = self.kwargs['base_lr']
+            self.max_lr = self.kwargs['max_lr']
+            self.step_size_up = self.kwargs['step_size_up']
+            self.step_size_down = self.kwargs.get('step_size_down', self.step_size_up)
+
+    def step(self):
+        self.current_iter += 1
+
+        if self.scheduler_type == 'regular_decay':
+            self.lr = self.first_lr * (self.decay_factor ** self.current_iter)
+            if self.current_iter >= self.num_iters:
+                self.lr = self.last_lr
+
+        elif self.scheduler_type == 'exponential_decay':
+            self.lr = self.base_lr * (self.gamma ** self.current_iter)
+
+        elif self.scheduler_type == 'step_decay':
+            if self.current_iter % self.step_size == 0:
+                self.lr = self.base_lr * (self.gamma ** (self.current_iter // self.step_size))
+
+        elif self.scheduler_type == 'cosine_annealing':
+            self.lr = self.eta_min + (self.first_lr - self.eta_min) * \
+                      (1 + math.cos(math.pi * self.current_iter / self.T_max)) / 2
+
+        elif self.scheduler_type == 'cyclic_lr':
+            cycle = math.floor(1 + self.current_iter / (2 * self.step_size_up))
+            x = abs(self.current_iter / self.step_size_up - 2 * cycle + 1)
+            if x <= 1:
+                self.lr = self.base_lr + (self.max_lr - self.base_lr) * max(0, (1 - x))
+            else:
+                self.lr = self.base_lr + (self.max_lr - self.base_lr) * max(0, (x - 1))
+
+    def get_lr(self):
+        return self.lr
 
 
 # Define the Federated Learning Simulation class
@@ -176,12 +241,10 @@ class FederatedLearning:
         p_bar.close()
         return curr_iter
 
-    def train(self, selection_size, client_selection_method:Client_Selection, total_time, time_bt_eval=3, warmup_selection_alg=0, calc_regret=False, lr=0.001):
+    def train(self, selection_size, client_selection_method:Client_Selection, total_time, time_bt_eval=3, warmup_selection_alg=0, calc_regret=False, lr_sched:LRScheduler=0.001):
         self.results['total_time'] = total_time
         time_left = total_time
         iter = warmup_selection_alg + 1
-        last_lr = lr / 100    # TODO change to lower last_lr
-        lr_decay = (last_lr/lr)**(1/(total_time/time_bt_eval))
         warmup_n_observations = client_selection_method.n_observations.copy()
         # regret analysis
         if calc_regret:
@@ -206,7 +269,7 @@ class FederatedLearning:
             trained_dict = {'iter_times':[None]*selection_size, "loss":[None]*selection_size}
             for i, client in enumerate(selected_clients):
                 client.local_model.load_state_dict(initial_weights)
-                local_optimizer = optim.Adam(client.local_model.parameters(), lr=lr)
+                local_optimizer = optim.Adam(client.local_model.parameters(), lr=lr_sched.get_lr())
                 iter_time, client_trained_dict = client.train(local_optimizer, self.criterion)
 
                 trained_dict["iter_times"][i] = iter_time
@@ -231,7 +294,7 @@ class FederatedLearning:
                 array_str = ', '.join(map(str, client_selection_method.n_observations - warmup_n_observations))
                 self.tb_writer.add_text('n_observations', array_str)
                 last_time_eval = time_left
-                lr = lr * lr_decay
+                lr_sched.step()
 
             # regret analysis
             if calc_regret:

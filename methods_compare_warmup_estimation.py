@@ -18,14 +18,14 @@ from torch.utils.tensorboard import SummaryWriter
 from Linear_regrression.LinearRegressionModel import LinearRegressionModel
 from CNN.CNN_Model import CNNModel
 from CNN.FlexibleCNN import FlexibleCNN
-from FL import FederatedLearning
+from FL import FederatedLearning, LRScheduler
 from Client_Selection import *
 from data_utils import *
 
 Debug = False
 
 def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_bulks, n_clients, selection_size, dataset_name='cifar10',
-                              iid=True, calc_regret=False, lr=0.001, fast_clients_relation=None,
+                              iid=True, calc_regret=False, lr_sched=0.001, fast_clients_relation=None,
                               slow_clients_relation=None, mid_clients_mean=None, warmup_temperature=None):
     total_time = time_bulks * n_clients // selection_size
 
@@ -46,7 +46,7 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
     # res dir
     res_dir = os.path.join(f"results/methods_compare/{dataset_name}", f'{datetime.now().strftime("%Y-%m-%d_%H:%M")}'
         f'_{"" if iid else "non"}_iid__{dataset_name}__{n_clients}_{selection_size}__{time_bulks}t__'
-        f'lr{int(-1*np.log10(lr))}')
+        f'lr{int(-1 * np.log10(lr_sched.get_lr()))}')
     os.makedirs(res_dir, exist_ok=True)
 
     if dataset_name == 'lin_reg':
@@ -84,8 +84,8 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
     # with open(os.path.join(res_dir, f"compare_init.pkl"), 'wb') as f:
     #     pickle.dump({"all_clients": all_clients, "global_weights": global_weights}, f)
 
-    run_dict = {"lr": lr, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, **css_args[0]}
-    print(datetime.now().strftime("%Y-%m-%d_%H:%M"), "\n", {"lr": lr, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation}, "\n", css_args[0])
+    run_dict = {"le_sched":lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, **css_args[0]}
+    print(datetime.now().strftime("%Y-%m-%d_%H:%M"), "\n", {"lr": lr_sched, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation}, "\n", css_args[0])
     # bsfl_loss, bsfl_acc = None, None
     alpha, beta = css_args[0]['alpha'], css_args[0]['beta']
     for cs_method, args, T in zip(cs_methods, css_args, warmup_temperature):
@@ -100,7 +100,7 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         # Create Federated Learning simulation
         fl_simulation = FederatedLearning(global_model=global_model, all_clients=all_clients, test_data=test_dataset,
                                           device=device, track_observations=False, iid=iid, alpha=alpha, beta=beta, tb_writer=writer)
-        res.update({"data_sizes": fl_simulation.data_size, "data_quality": fl_simulation.data_quality, "rate_dists": all_clients_dists, "lr": lr})
+        res.update({"data_sizes": fl_simulation.data_size, "data_quality": fl_simulation.data_quality, "rate_dists": all_clients_dists, "lr": lr_sched})
 
         # client selection method
         warmup_iters = args.pop('warmup_iters')
@@ -112,7 +112,7 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         warmup_n_observations = selection_method.n_observations.copy()
 
         # Train the global model using Federated Learning
-        res.update(fl_simulation.train(selection_size, selection_method, total_time, calc_regret=calc_regret, warmup_selection_alg=warmup_iters, lr=lr))
+        res.update(fl_simulation.train(selection_size, selection_method, total_time, calc_regret=calc_regret, warmup_selection_alg=warmup_iters, lr_sched=lr_sched))
         res.update({'n_observations_no_warmup': res['n_observations'] - warmup_n_observations, "warmup_iters": warmup_iters})
 
         with open(os.path.join(res_dir, f"{selection_method}.pkl"), 'wb') as f:
@@ -137,17 +137,21 @@ if __name__ == "__main__":
     # warmup_temp = [5,5,5,5,5]
     iid = True
     dataset_name = 'fashion_mnist'  # 'cifar10' 'lin_reg' 'fashion_mnist'
-    time_bulks = 0.1     # iid: 30 non: 20
+    time_bulks = 8     # iid: 30 non: 20
     n_clients = 500
     selection_size = 25
     calc_regret = False
     lr = 5e-5      # iid: 5e-5 non: 2e-6
-    fast_relation = 0.05    # [0.05, 0.02, 0.1]
+    fast_relation = 0.03    # [0.05, 0.02, 0.1]
     slow_relation = 0.1     # [0.2, 0.1]
     mid_clients_mean = (0.15, 0.2)   # [(0.15, 0.2), (0.75, 0.8), (0.4, 0.45), (0.15, 0.6)]
     warmup_temperature = [1, 0.1, 5, 0, 0]  # for 1e6 warmup iters [1, 0.1, 5, 0, 0]
 
+    # regular_decay: first_lr, last_lr, num_iters / exponential_decay: base_lr, gamma /
+    # step_decay: base_lr, step_size, gamma / cosine_annealing: first_lr, T_max, eta_min /
+    # cyclic_lr: base_lr, max_lr, step_size_up, step_size_down (optional)
+    lr_sched = LRScheduler("regular_decay", **{"first_lr": lr, "last_lr": lr/10, "num_iters":time_bulks*7})
 
     selection_methods_compare(css, css_args, time_bulks, n_clients, selection_size, dataset_name=dataset_name, iid=iid,
-                              calc_regret=calc_regret, lr=lr, fast_clients_relation=fast_relation,
+                              calc_regret=calc_regret, lr_sched=lr_sched, fast_clients_relation=fast_relation,
                               slow_clients_relation=slow_relation, mid_clients_mean= mid_clients_mean, warmup_temperature=warmup_temperature)
