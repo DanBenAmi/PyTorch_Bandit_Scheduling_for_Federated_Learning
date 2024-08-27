@@ -1,0 +1,33 @@
+
+css_args:
+  - warmup_iters: 1e6
+    beta: 1
+    alpha: 1
+  - warmup_iters: 1e6
+  - warmup_iters: 1e6
+  - warmup_iters: 0
+  - warmup_iters: 0
+
+iid: False
+dataset_name: fashion_mnist    # 'cifar10' 'lin_reg' 'fashion_mnist'
+time_bulks: 30
+n_clients: 500
+selection_size: 25
+calc_regret: False
+fast_relation: 0.03      # [0.05, 0.02, 0.1]
+slow_relation: 0.1    # [0.2, 0.1]
+mid_clients_mean: [0.15, 0.2]    # [(0.15, 0.2), (0.75, 0.8), (0.4, 0.45), (0.15, 0.6)]
+warmup_temperature: [1, 0.5, 5, 0, 0]
+
+lr_scheduler:
+  type: regular_decay
+  first_lr: 2e-6
+  last_lr: 2e-7
+  num_iters: 6667
+
+# regular_decay: first_lr, last_lr, num_iters / exponential_decay: base_lr, gamma /
+# step_decay: base_lr, step_size, gamma / cosine_annealing: first_lr, T_max, eta_min /
+# cyclic_lr: base_lr, max_lr, step_size_up, step_size_down (optional)
+#    lr_sched = LRScheduler("regular_decay", **{"first_lr": lr, "last_lr": lr/10, "num_iters":int(time_bulks*n_clients/selection_size/3)+1})
+
+
