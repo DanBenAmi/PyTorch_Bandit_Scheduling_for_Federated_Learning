@@ -13,6 +13,7 @@ import os
 import random
 import copy
 from typing import List
+import yaml
 from torch.utils.tensorboard import SummaryWriter
 
 from Linear_regrression.LinearRegressionModel import LinearRegressionModel
@@ -44,7 +45,7 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         device = "cpu"
 
     # res dir
-    res_dir = os.path.join(f"results/methods_compare/{dataset_name}", f'{datetime.now().strftime("%Y-%m-%d_%H:%M")}'
+    res_dir = os.path.join(f"results","methods_compare",f"{dataset_name}", f'{datetime.now().strftime("%Y-%m-%d_%H-%M")}'
         f'_{"" if iid else "non"}_iid__{dataset_name}__{n_clients}_{selection_size}__{time_bulks}t__'
         f'lr{int(-1 * np.log10(lr_sched.get_lr()))}')
     os.makedirs(res_dir, exist_ok=True)
@@ -84,12 +85,14 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
     # with open(os.path.join(res_dir, f"compare_init.pkl"), 'wb') as f:
     #     pickle.dump({"all_clients": all_clients, "global_weights": global_weights}, f)
 
-    run_dict = {"le_sched":lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, **css_args[0]}
-    print(datetime.now().strftime("%Y-%m-%d_%H:%M"), "\n", {"lr": lr_sched, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation}, "\n", css_args[0])
+    run_dict = {"lr_sched":lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, **css_args[0]}
+    print(datetime.now().strftime("%Y-%m-%d_%H:%M"), "\n", {"lr": lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, "mid_clients_mean":mid_clients_mean}, "\n", css_args[0])
     # bsfl_loss, bsfl_acc = None, None
     alpha, beta = css_args[0]['alpha'], css_args[0]['beta']
     for cs_method, args, T in zip(cs_methods, css_args, warmup_temperature):
-        tb_dir = os.path.join(res_dir, f"tb_{cs_method}")
+        warmup_iters = args.pop('warmup_iters')
+        selection_method = cs_method(all_clients, total_time, n_clients, selection_size, iid, **args)
+        tb_dir = os.path.join(res_dir, f"tb_{selection_method}")
         writer = SummaryWriter(log_dir=tb_dir)
         writer.add_hparams(run_dict, {})
 
@@ -103,8 +106,6 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         res.update({"data_sizes": fl_simulation.data_size, "data_quality": fl_simulation.data_quality, "rate_dists": all_clients_dists, "lr": lr_sched})
 
         # client selection method
-        warmup_iters = args.pop('warmup_iters')
-        selection_method = cs_method(all_clients, total_time, n_clients, selection_size, iid, **args)
         if warmup_iters:
             selection_method.update_n_obs_warmup(warmup_iters, slow_mid_fast_means, slow_mid_fast_relations,
                                                  all_clients_dists, T=T)
@@ -125,33 +126,53 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         #     print(f"early stopped because {selection_method} is better in this inputs")
 
 
+# Function to load the YAML configuration
+def load_config(file_path):
+    with open(file_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
+
+
 if __name__ == "__main__":
+    # Load the config
+    config_path = r'configs/iid_fashion.yml'
+    config = load_config(config_path)
+
     css = [BSFL, cs_ucb, RBCS_F, PowerOfChoice, Random_Selection]
-    css_args = [
-        {'warmup_iters': 1e6, 'beta': 1, 'alpha': 1}, # 1e7=>T=5
-        {'warmup_iters': 1e6},
-        {'warmup_iters': 1e6},
-        {'warmup_iters': 0},
-        {'warmup_iters': 0}
-    ]
-    # warmup_temp = [5,5,5,5,5]
-    iid = True
-    dataset_name = 'fashion_mnist'  # 'cifar10' 'lin_reg' 'fashion_mnist'
-    time_bulks = 8     # iid: 30 non: 20
-    n_clients = 500
-    selection_size = 25
-    calc_regret = False
-    lr = 5e-5      # iid: 5e-5 non: 2e-6
-    fast_relation = 0.03    # [0.05, 0.02, 0.1]
-    slow_relation = 0.1     # [0.2, 0.1]
-    mid_clients_mean = (0.15, 0.2)   # [(0.15, 0.2), (0.75, 0.8), (0.4, 0.45), (0.15, 0.6)]
-    warmup_temperature = [1, 0.1, 5, 0, 0]  # for 1e6 warmup iters [1, 0.1, 5, 0, 0]
 
-    # regular_decay: first_lr, last_lr, num_iters / exponential_decay: base_lr, gamma /
-    # step_decay: base_lr, step_size, gamma / cosine_annealing: first_lr, T_max, eta_min /
-    # cyclic_lr: base_lr, max_lr, step_size_up, step_size_down (optional)
-    lr_sched = LRScheduler("regular_decay", **{"first_lr": lr, "last_lr": lr/10, "num_iters":time_bulks*7})
+    # Extract variables from config
+    css_args = []
+    for arg in config['css_args']:
+        # Convert values in each dict to floats where appropriate
+        converted_arg = {key: float(value) if isinstance(value, (int, float, str)) and key == "warmup_iters" else value
+                         for key, value in arg.items()}
+        css_args.append(converted_arg)
 
+    iid = config['iid']
+    dataset_name = config['dataset_name']
+    time_bulks = config['time_bulks']
+    n_clients = config['n_clients']
+    selection_size = config['selection_size']
+    calc_regret = config['calc_regret']
+    fast_relation = config['fast_relation']
+    slow_relation = config['slow_relation']
+    mid_clients_mean = tuple(config['mid_clients_mean'])
+    warmup_temperature = config['warmup_temperature']
+
+    # Extract LR scheduler parameters
+    lr_sched_type = config['lr_scheduler']['type']
+    lr_sched_params = {
+        "first_lr": float(config['lr_scheduler']['first_lr']),
+        "last_lr": float(config['lr_scheduler']['last_lr']),
+        "num_iters": config['lr_scheduler']['num_iters']
+    }
+
+    # Assuming LRScheduler is a class that takes type and params
+    lr_sched = LRScheduler(lr_sched_type, **lr_sched_params)
+
+    # Your function call
     selection_methods_compare(css, css_args, time_bulks, n_clients, selection_size, dataset_name=dataset_name, iid=iid,
                               calc_regret=calc_regret, lr_sched=lr_sched, fast_clients_relation=fast_relation,
-                              slow_clients_relation=slow_relation, mid_clients_mean= mid_clients_mean, warmup_temperature=warmup_temperature)
+                              slow_clients_relation=slow_relation, mid_clients_mean=mid_clients_mean,
+                              warmup_temperature=warmup_temperature)
+

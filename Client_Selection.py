@@ -221,6 +221,8 @@ class cs_ucb(Client_Selection):
         selected_indices = sorted(list(range(self.n_clients)), key=lambda id:(1-self.beta)*self.y_hat[id]+self.beta*self.D[id], reverse=True)[:self.selection_size]
 
         self.last_selection_indices = selected_indices
+        self.b = np.zeros(self.n_clients)
+        self.b[self.last_selection_indices] = 1
         return selected_indices
 
     def select_clients(self):

@@ -293,6 +293,7 @@ class FederatedLearning:
                 self.evaluate_global_model(iter, total_time-time_left)
                 array_str = ', '.join(map(str, client_selection_method.n_observations - warmup_n_observations))
                 self.tb_writer.add_text('n_observations', array_str)
+                self.tb_writer.add_scalar("lr", lr_sched.get_lr(), time)
                 last_time_eval = time_left
                 lr_sched.step()
 
