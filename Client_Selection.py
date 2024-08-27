@@ -307,7 +307,7 @@ class RBCS_F(Client_Selection):
         # A typical TCP handshake involves several steps: SYN, SYN-ACK, and ACK. Let's assume that each handshake takes
         # approximately 20 milliseconds, which is a reasonable estimate for a basic network round-trip time.
         # therefore in each round, for each client to send the context is 0.02, in selection_size orthogonal channels.
-        self.selection_communication_time = 0.02 * n_clients / selection_size / 5 # we supppose the training time is between 1 sec to 10 sec and it is normalized..
+        self.selection_communication_time = 0.02 * n_clients / selection_size / 10 # we supppose the training time is between 1 sec to 10 sec and it is normalized..
 
     def __repr__(self):
         return "RBCS-F"
