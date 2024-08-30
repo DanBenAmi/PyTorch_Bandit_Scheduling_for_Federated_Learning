@@ -1,4 +1,4 @@
-
+#     css = [BSFL, cs_ucb, RBCS_F, PowerOfChoice, Random_Selection]
 css_args:
   - warmup_iters: 1e6
     beta: 1
@@ -10,19 +10,19 @@ css_args:
 
 iid: True
 dataset_name: fashion_mnist    # 'cifar10' 'lin_reg' 'fashion_mnist'
-time_bulks: 30
+time_bulks: 0.1
 n_clients: 500
 selection_size: 25
 calc_regret: False
 fast_relation: 0.03      # [0.05, 0.02, 0.1]
 slow_relation: 0.1    # [0.2, 0.1]
 mid_clients_mean: [0.15, 0.2]    # [(0.15, 0.2), (0.75, 0.8), (0.4, 0.45), (0.15, 0.6)]
-warmup_temperature: [1, 0.5, 5, 0, 0]
+warmup_temperature: [1, 0.1, 5, 0, 0]
 
 lr_scheduler:
   type: regular_decay
   first_lr: 9e-5
-  last_lr: 2e-7
+  last_lr: 9e-6
   num_iters: 200
 
 # regular_decay: first_lr, last_lr, num_iters / exponential_decay: base_lr, gamma /

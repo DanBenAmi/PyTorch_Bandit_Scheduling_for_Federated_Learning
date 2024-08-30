@@ -135,7 +135,7 @@ def load_config(file_path):
 
 if __name__ == "__main__":
     # Load the config
-    config_path = r'configs/iid_fashion.yml'
+    config_path = r'configs/non_iid_fashion.yml'
     config = load_config(config_path)
 
     css = [BSFL, cs_ucb, RBCS_F, PowerOfChoice, Random_Selection]
