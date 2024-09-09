@@ -1,41 +1,32 @@
-import time
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-import torchvision.transforms as transforms
-from torchvision import datasets, models
-from torch.utils.data import DataLoader, random_split
-import numpy as np
-import os
-import random
 import copy
 from tqdm import tqdm
-from typing import List
 from itertools import combinations
 from scipy.special import comb
-from torch.optim.lr_scheduler import CosineAnnealingLR  # Add this import
 from torch.utils.tensorboard import SummaryWriter
-import math
-
+from typing import List
 from Client import *
 from Client_Selection import *
 
+
+import math
 
 class LRScheduler:
     def __init__(self, scheduler_type: str, **kwargs):
         self.scheduler_type = scheduler_type
         self.kwargs = kwargs
+        self.first_lr = self.kwargs.get('first_lr', 0.001)  # Default to 0.001 if not provided
         self.current_iter = 0
-        self.lr = self.kwargs.get('first_lr', 0.001)  # Default to 0.001 if not provided
+        self.lr = self.first_lr
 
         if scheduler_type == 'regular_decay':
-            self.first_lr = self.kwargs['first_lr']
             self.last_lr = self.kwargs['last_lr']
             self.num_iters = self.kwargs['num_iters']
             self.decay_factor = (self.last_lr / self.first_lr) ** (1 / self.num_iters)
 
-        # Add other scheduler types initialization here
         elif scheduler_type == 'exponential_decay':
             self.base_lr = self.kwargs['base_lr']
             self.gamma = self.kwargs['gamma']
@@ -84,6 +75,22 @@ class LRScheduler:
 
     def get_lr(self):
         return self.lr
+
+    def reset(self):
+        self.current_iter = 0
+        self.lr = self.first_lr
+
+        # Recompute any other parameters that might be needed for the initial state
+        if self.scheduler_type == 'regular_decay':
+            self.decay_factor = (self.last_lr / self.first_lr) ** (1 / self.num_iters)
+        elif self.scheduler_type == 'exponential_decay':
+            self.lr = self.base_lr
+        elif self.scheduler_type == 'step_decay':
+            self.lr = self.base_lr
+        elif self.scheduler_type == 'cosine_annealing':
+            self.lr = self.first_lr
+        elif self.scheduler_type == 'cyclic_lr':
+            self.lr = self.base_lr
 
 
 # Define the Federated Learning Simulation class
@@ -223,34 +230,50 @@ class FederatedLearning:
         initial_n_obs = client_selection_method.n_observations.copy()
         curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
         p_bar = tqdm()
-        while np.any(curr_warmup_obs < 1):  # until each client chosen twice.
+        stage = "coarse"
+        while stage != "stop":  # until each client chosen twice.
             trained_dict = {'iter_times': [None] * client_selection_method.selection_size}
             selected_clients_indices = client_selection_method.select_clients()
             selected_clients = [self.all_clients[i] for i in selected_clients_indices]
             for i, client in enumerate(selected_clients):
                 iter_time = np.clip(self.tau_min / np.random.normal(client.mean_rate, client.std_rate), self.tau_min, 1)
                 trained_dict["iter_times"][i] = iter_time
-            trained_dict["iter"] = curr_iter
+                client_selection_method.n_observations[selected_clients_indices[i]] += curr_warmup_obs[selected_clients_indices[i]]
+
+            curr_iter = np.sum(client_selection_method.n_observations) // client_selection_method.selection_size
+            trained_dict["iter"] = curr_iter+1
             client_selection_method.post_iter_process(trained_dict)
             curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
-            client_selection_method.n_observations += 1098*(curr_warmup_obs > 0).astype(int)
-            client_selection_method.post_iter_process(trained_dict)
-            curr_iter += 100
             p_bar.update(1)
-        # client_selection_method.post_iter_process(trained_dict)
+            if np.all(curr_warmup_obs>0):
+                stage = "fine" if stage=="coarse" else "stop"
+                if stage=="fine":
+                    client_selection_method.n_observations -= curr_warmup_obs//2
+                    curr_iter = np.sum(client_selection_method.n_observations) // client_selection_method.selection_size
+                    trained_dict["iter"] = curr_iter + 1
+                    client_selection_method.post_iter_process(trained_dict)
+                    initial_n_obs = client_selection_method.n_observations.copy()
+                    curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
+                    p_bar.close()
+                    p_bar = tqdm()
         p_bar.close()
+        # for client_idx in range(self.n_clients):
+        #     client_selection_method.n_observations[client_idx] -= int(client_selection_method.n_observations[client_idx]//2)
+        # curr_iter = np.sum(client_selection_method.n_observations) // client_selection_method.selection_size
+        # trained_dict["iter"] = curr_iter + 1
+        # client_selection_method.post_iter_process(trained_dict)
         return curr_iter
 
-    def train(self, selection_size, client_selection_method:Client_Selection, total_time, time_bt_eval=3, warmup_selection_alg=0, calc_regret=False, lr_sched:LRScheduler=0.001):
+    def train(self, selection_size, client_selection_method:Client_Selection, total_time, time_bt_eval=3, warmup_iters=0, calc_regret=False, lr_sched:LRScheduler=0.001):
         self.results['total_time'] = total_time
         time_left = total_time
-        iter = warmup_selection_alg + 1
+        iter = warmup_iters + 1
         warmup_n_observations = client_selection_method.n_observations.copy()
         # regret analysis
         if calc_regret:
             self.results["regret"] = []
 
-        self.evaluate_global_model(iter, total_time - time_left)
+        self.evaluate_global_model(iter - warmup_iters, total_time - time_left)
         last_time_eval = time_left
 
         pbar = tqdm(total=total_time)
@@ -290,7 +313,7 @@ class FederatedLearning:
             total_iter_time = max(trained_dict["iter_times"])
             time_left -= total_iter_time
             if time_left < last_time_eval-time_bt_eval or time_left<0:
-                self.evaluate_global_model(iter, total_time-time_left)
+                self.evaluate_global_model(iter - warmup_iters, total_time - time_left)
                 array_str = ', '.join(map(str, client_selection_method.n_observations - warmup_n_observations))
                 self.tb_writer.add_text('n_observations', array_str)
                 self.tb_writer.add_scalar("lr", lr_sched.get_lr(), total_time-time_left)

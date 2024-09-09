@@ -1,21 +1,7 @@
-import numpy as np
 import matplotlib.pyplot as plt
-import time
-
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-import torchvision.transforms as transforms
-from torchvision import datasets, models
 from torch.utils.data import DataLoader, random_split
 import numpy as np
-import os
-import random
-import copy
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
-from scipy.special import comb
+
 
 class Client:
     ''' Client object represent a client in the FL training process, each client holds a data and labels, the server
@@ -131,7 +117,7 @@ def make_clients_non_iid(train_images_sorted, train_labels_sorted, num_of_client
         classes_idxes += class_data_size
         # change images quality
         q = np.random.uniform(0,1)
-        gauss_noise = np.random.normal(0, 0.13*(1-q), client_data.shape)
+        gauss_noise = np.random.normal(0, 0.05*(1-q), client_data.shape)
         client_data += gauss_noise
         all_clients.append(Client(j, 10000, 10000, client_data, client_labels, 0, q=q))
 

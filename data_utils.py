@@ -41,7 +41,7 @@ def add_noise(data_points, q):
     if data_points.ndim == 2: # lin_reg dataset
         noise = np.random.normal(loc=0, scale=(1 - q) / 2, size=data_points.shape)
     else:
-        noise = np.random.normal(loc=0, scale=(1 - q) / 4, size=data_points.shape)
+        noise = np.random.normal(loc=0, scale=(1 - q) * 0.2, size=data_points.shape)
     noisy_data_points = data_points + noise
     if noisy_data_points.ndim > 2: # images and not vectors..
         noisy_data_points = np.clip(noisy_data_points, 0, 1)  # Ensure the values are within [0, 1]
@@ -91,7 +91,7 @@ def split_data(dataset, n_clients, iid=True, dataset_name='lin_reg', data_sizes=
 
         # quality levels
         if not qs:
-            qs = [random.uniform(0.5, 1) for _ in range(n_clients)]  # Random noise levels between 0 and 1 for each client
+            qs = [random.uniform(0.7, 1) for _ in range(n_clients)]  # Random noise levels between 0 and 1 for each client
 
         client_datasets = random_split(dataset, data_sizes)
 

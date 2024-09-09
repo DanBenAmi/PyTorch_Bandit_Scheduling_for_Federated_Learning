@@ -1,10 +1,4 @@
-import numpy as np
-import sys
-import os
-from typing import List
-import math
-from scipy.optimize import least_squares
-
+import random
 from Client import *
 
 
@@ -122,7 +116,7 @@ class BSFL(Client_Selection):
 
         else:
             # main loop:
-            selected_indices = self.simulated_annealing(iters=5000)     #TODO change iters to 1000
+            selected_indices = self.simulated_annealing(iters=1000)     #TODO change iters to 1000
 
         self.last_selection_indices = selected_indices
         return selected_indices
@@ -307,7 +301,7 @@ class RBCS_F(Client_Selection):
         # A typical TCP handshake involves several steps: SYN, SYN-ACK, and ACK. Let's assume that each handshake takes
         # approximately 20 milliseconds, which is a reasonable estimate for a basic network round-trip time.
         # therefore in each round, for each client to send the context is 0.02, in selection_size orthogonal channels.
-        self.selection_communication_time = 0.02 * n_clients / selection_size / 10 # we supppose the training time is between 1 sec to 10 sec and it is normalized..
+        self.selection_communication_time = 0.02 * n_clients / selection_size / 1 # we supppose the training time is between 1 sec to 10 sec and it is normalized..
 
     def __repr__(self):
         return "RBCS-F"

@@ -67,7 +67,7 @@ if __name__ == '__main__':
         # Ensure it's a directory
         if os.path.isdir(dir_path):
             # Extract the parameter (alpha or beta) from the folder name
-            if '_iid' not in str(dir_path):
+            if 'non_iid' not in str(dir_path):
                 continue
 
         try:

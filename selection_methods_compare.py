@@ -104,7 +104,7 @@ def selection_methods_compare(cs_methods, css_args, time_bulks, n_clients, selec
         warmup_n_observations = selection_method.n_observations.copy()
 
         # Train the global model using Federated Learning
-        res.update(fl_simulation.train(selection_size, selection_method, total_time, calc_regret=calc_regret, warmup_selection_alg=warmup_iters, lr=lr))
+        res.update(fl_simulation.train(selection_size, selection_method, total_time, calc_regret=calc_regret, warmup_iters=warmup_iters, lr=lr))
         res.update({'n_observations_no_warmup': res['n_observations'] - warmup_n_observations, "warmup_iters": warmup_iters})
 
         with open(os.path.join(res_dir, f"{selection_method}.pkl"), 'wb') as f:

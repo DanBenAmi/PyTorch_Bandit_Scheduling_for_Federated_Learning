@@ -1,21 +1,10 @@
+import os.path
 import pickle
 import time
 from datetime import datetime
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-import torchvision.transforms as transforms
-from torchvision import datasets, models
-from torch.utils.data import DataLoader, random_split
-import numpy as np
-import os
-import random
-import copy
-from typing import List
 import yaml
 from torch.utils.tensorboard import SummaryWriter
-
+from typing import List
 from Linear_regrression.LinearRegressionModel import LinearRegressionModel
 from CNN.CNN_Model import CNNModel
 from CNN.FlexibleCNN import FlexibleCNN
@@ -26,7 +15,7 @@ from data_utils import *
 Debug = False
 
 def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_bulks, n_clients, selection_size, dataset_name='cifar10',
-                              iid=True, calc_regret=False, lr_sched=0.001, fast_clients_relation=None,
+                              iid=True, calc_regret=False, lr_sched:LRScheduler=0.001, fast_clients_relation=None,
                               slow_clients_relation=None, mid_clients_mean=None, warmup_temperature=None):
     total_time = time_bulks * n_clients // selection_size
 
@@ -48,6 +37,12 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
     res_dir = os.path.join(f"results","methods_compare",f"{dataset_name}", f'{datetime.now().strftime("%Y-%m-%d_%H-%M")}'
         f'_{"" if iid else "non"}_iid__{dataset_name}__{n_clients}_{selection_size}__{time_bulks}t__'
         f'lr{int(-1 * np.log10(lr_sched.get_lr()))}')
+    if os.path.isdir(res_dir):
+        time.sleep(60)
+        res_dir = os.path.join(f"results", "methods_compare", f"{dataset_name}",
+                               f'{datetime.now().strftime("%Y-%m-%d_%H-%M")}'
+                               f'_{"" if iid else "non"}_iid__{dataset_name}__{n_clients}_{selection_size}__{time_bulks}t__'
+                               f'lr{int(-1 * np.log10(lr_sched.get_lr()))}')
     os.makedirs(res_dir, exist_ok=True)
 
     if dataset_name == 'lin_reg':
@@ -65,7 +60,7 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
     slow_mid_fast_relations = [slow_clients_relation, 1-slow_clients_relation-fast_clients_relation, fast_relation]
     slow_mid_fast_means = [0.11, np.average(list(mid_clients_mean)), 0.95]
     all_clients_dists = np.concatenate((
-        np.random.uniform(low=[0.1, 0], high=[0.12, 0.03], size=(round(n_clients * slow_clients_relation), 2)),
+        np.random.uniform(low=[0.1, 0], high=[0.11, 0.03], size=(round(n_clients * slow_clients_relation), 2)),
         np.random.uniform(low=[mid_clients_mean[0], 0], high=[mid_clients_mean[1], 0.03],
                           size=(round(n_clients * (1 - slow_clients_relation - fast_clients_relation)), 2)),
         np.random.uniform(low=[0.93, 0], high=[0.97, 0.03], size=(round(n_clients * fast_clients_relation), 2))
@@ -85,11 +80,12 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
     # with open(os.path.join(res_dir, f"compare_init.pkl"), 'wb') as f:
     #     pickle.dump({"all_clients": all_clients, "global_weights": global_weights}, f)
 
-    run_dict = {"lr_sched":lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, **css_args[0]}
+    run_dict = {"lr_sched":lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, **css_args[0], "mid_mean_min": mid_clients_mean[0], "mid_mean_max": mid_clients_mean[1]}
     print(datetime.now().strftime("%Y-%m-%d_%H:%M"), "\n", {"lr": lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, "mid_clients_mean":mid_clients_mean}, "\n", css_args[0])
     # bsfl_loss, bsfl_acc = None, None
     alpha, beta = css_args[0]['alpha'], css_args[0]['beta']
     for cs_method, args, T in zip(cs_methods, css_args, warmup_temperature):
+        lr_sched.reset()
         warmup_iters = args.pop('warmup_iters')
         selection_method = cs_method(all_clients, total_time, n_clients, selection_size, iid, **args)
         tb_dir = os.path.join(res_dir, f"tb_{selection_method}")
@@ -109,12 +105,28 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         if warmup_iters:
             selection_method.update_n_obs_warmup(warmup_iters, slow_mid_fast_means, slow_mid_fast_relations,
                                                  all_clients_dists, T=T)
-            fl_simulation.selection_warmup_til_all_selected(selection_method, curr_iter=warmup_iters)
+            curr_iter = fl_simulation.selection_warmup_til_all_selected(selection_method, curr_iter=warmup_iters)
         warmup_n_observations = selection_method.n_observations.copy()
 
         # Train the global model using Federated Learning
-        res.update(fl_simulation.train(selection_size, selection_method, total_time, calc_regret=calc_regret, warmup_selection_alg=warmup_iters, lr_sched=lr_sched))
+        res.update(fl_simulation.train(selection_size, selection_method, total_time, calc_regret=calc_regret, warmup_iters=curr_iter, lr_sched=lr_sched))
         res.update({'n_observations_no_warmup': res['n_observations'] - warmup_n_observations, "warmup_iters": warmup_iters})
+
+        if not iid and isinstance(selection_method, (BSFL, cs_ucb, Random_Selection)):
+            if isinstance(selection_method, BSFL):
+                importances = selection_method.data_size * selection_method.data_quality
+            else:
+                importances = selection_method.data_size
+            tuple_list = [
+                f'({int(res["n_observations_no_warmup"][i])}, {all_clients_dists[i,0]:.2f}, {int(importances[i])})'
+                for i in range(n_clients)
+            ]
+            result_str = ', '.join(tuple_list)
+            writer.add_text('(obs,rates,imps)', result_str)
+            # array_str = ', '.join(str(int(num)) for num in selection_method.data_size * selection_method.data_quality)
+            # writer.add_text('data_importance', array_str)
+            # array_str = ', '.join(f'{num:.2f}' for num in all_clients_dists[:,0])
+            # writer.add_text('mean_rates', array_str)
 
         with open(os.path.join(res_dir, f"{selection_method}.pkl"), 'wb') as f:
             pickle.dump(res, f)
