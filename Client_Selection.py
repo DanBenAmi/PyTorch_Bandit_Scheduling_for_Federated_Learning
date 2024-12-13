@@ -1,4 +1,7 @@
 import random
+
+import numpy as np
+
 from Client import *
 
 
@@ -10,7 +13,7 @@ class Client_Selection:
         self.n_clients = n_clients
         self.selection_size = selection_size
         self.last_selection_indices = []
-        self.n_observations = np.array([0]*n_clients)
+        self.n_observations = np.array([0]*n_clients, dtype=np.int64)
         self.selection_communication_time = 0
         self.mu_rate = np.array([0] * n_clients, dtype=np.float32) # clients' averages iteration rate
 
@@ -41,7 +44,7 @@ class BSFL(Client_Selection):
         self.mu_rate = np.array([0] * n_clients, dtype=np.float32) # clients' averages iteration rate
         self.ucb = np.array([100000] * n_clients, dtype=np.float32)
         self.g = np.array([100000] * n_clients, dtype=np.float32)
-        self.n_observations = np.array([0] * n_clients) # clients' selected counter (C_k for k in K)
+        self.n_observations = np.array([0] * n_clients, dtype=np.int64) # clients' selected counter (C_k for k in K)
         self.alpha = alpha
         self.beta = beta
         self.tau_min = tau_min

@@ -14,7 +14,7 @@ class Client:
         self.mean_rate = mean_std_rate[0]
         self.std_rate = mean_std_rate[1]
         self.device = device
-        self.batch_size = 32
+        self.batch_size = 64
         # -------------------------- in the server -----------------------------------------
         self.id = id  # ID i.e. idx in all_clients list
         if data_size:

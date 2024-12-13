@@ -8,9 +8,12 @@ import os
 import random
 import copy
 from tqdm import tqdm
+import torch.nn.functional as F
+
+from tmp_lin_reg import y_train_normalized
 
 
-def get_data(dataset="cifar10"):
+def get_data(dataset="cifar10", train_size=600, noise_level=1.0):
     if dataset.lower()=="cifar10":
         transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
@@ -20,31 +23,31 @@ def get_data(dataset="cifar10"):
         train_dataset = datasets.FashionMNIST(root='./data', train=True, download=True, transform=transform)
         test_dataset = datasets.FashionMNIST(root='./data', train=False, download=True, transform=transform)
     elif dataset.lower() == "lin_reg":
-        train_size = 60 #TODO change back the number of data points later
         test_size = 5000
         n_features = 10
         # Generate some example data
-        x_train = torch.randn(train_size, n_features)  # 1000 samples, 10 features
+        x_train = torch.randn(train_size, n_features)  # 10 features
         true_weights = torch.randn(n_features)
         bias = 0.5
-        noise_level = 0.5
         y_train = torch.matmul(x_train, true_weights) + bias + noise_level * torch.randn(train_size)  # Linear relation with noise TODO change back to noise of 0.05* randn
-        x_test = torch.randn(test_size, n_features) # 1000 samples, 10 features
+        y_train_normalized = (y_train-y_train.min()) / (y_train.max()- y_train.min())
+        x_test = torch.randn(test_size, n_features)
         y_test = torch.matmul(x_test, true_weights) + bias
+        y_test_normalized = (y_test-y_train.min()) / (y_train.max()- y_train.min())
         # Create TensorDatasets
-        train_dataset = TensorDataset(x_train, y_train)
-        test_dataset = TensorDataset(x_test, y_test)
+        train_dataset = TensorDataset(x_train, y_train_normalized)
+        test_dataset = TensorDataset(x_test, y_test_normalized)
 
     return train_dataset, test_dataset
 
 def add_noise(data_points, q):
     if data_points.ndim == 2: # lin_reg dataset
-        noise = np.random.normal(loc=0, scale=(1 - q) / 2, size=data_points.shape)
+        noise = np.random.normal(loc=0, scale=(1 - q) * 0.5, size=data_points.shape)
     else:
-        noise = np.random.normal(loc=0, scale=(1 - q) * 0.2, size=data_points.shape)
+        noise = np.random.normal(loc=0, scale=(1 - q) * 0.1, size=data_points.shape) *0 #TODO delete the *0 for not cifar datasets
     noisy_data_points = data_points + noise
-    if noisy_data_points.ndim > 2: # images and not vectors..
-        noisy_data_points = np.clip(noisy_data_points, 0, 1)  # Ensure the values are within [0, 1]
+    # if noisy_data_points.ndim > 2: # images and not vectors..
+        # noisy_data_points = np.clip(noisy_data_points, -1, 1)  # Ensure the values are within [0, 1]
     return torch.Tensor(noisy_data_points)
 
 
@@ -91,7 +94,8 @@ def split_data(dataset, n_clients, iid=True, dataset_name='lin_reg', data_sizes=
 
         # quality levels
         if not qs:
-            qs = [random.uniform(0.7, 1) for _ in range(n_clients)]  # Random noise levels between 0 and 1 for each client
+            qs = [random.uniform(0.9, 1) for _ in range(n_clients)]  # Random noise levels between 0 and 1 for each client - Images
+            qs = [random.uniform(0.6, 1) for _ in range(n_clients)]  # Random noise levels between 0 and 1 for each client - Lin Reg
 
         client_datasets = random_split(dataset, data_sizes)
 

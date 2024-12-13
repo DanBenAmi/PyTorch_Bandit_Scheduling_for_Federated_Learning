@@ -3,6 +3,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
+FONTSIZE = 16
 
 def read_pkl_files(dir_path):
     data_dicts = {}
@@ -16,31 +17,70 @@ def read_pkl_files(dir_path):
 def moving_average(data, window_size):
     return np.convolve(data, np.ones(window_size) / window_size, mode='valid')
 
-def plot_data(data_dicts, window_size=1):
-    plt.figure(figsize=(12, 6))
+def plot_data(data_dicts, window_size=1, save_path=None):
+    plt.figure(figsize=(16, 6))
 
     # Plot time vs. accuracy
     plt.subplot(1, 2, 1)
     markers = ['o', '+', '*', 'x', 'v']
     for i, (cs_name, data) in enumerate(data_dicts.items()):
         smoothed_reg = moving_average(np.cumsum(data['regret'][1:]), window_size)
-        plt.plot(range(len(smoothed_reg)), smoothed_reg, marker=markers[i], label=f"{cs_name}")
-    plt.xlabel('Time', fontsize=14)
-    plt.ylabel('Regret', fontsize=14)
-    plt.title('Time vs. Regret', fontsize=16)
-    plt.legend(fontsize=12)
+        plt.plot(np.linspace(0,data["time"][-1],len(smoothed_reg)), smoothed_reg, marker=markers[i], label=f"{cs_name}", markevery=len(data_dicts[cs_name]["regret"])//len(data_dicts[cs_name]["time"]))
+    plt.xlabel('Time', fontsize=FONTSIZE)
+    plt.ylabel('Regret', fontsize=FONTSIZE)
+    # plt.title('Time vs. Regret', fontsize=FONTSIZE)
+    plt.legend(fontsize=FONTSIZE)
 
     # Plot time vs. loss
     plt.subplot(1, 2, 2)
     for i, (cs_name, data) in enumerate(data_dicts.items()):
         smoothed_loss = moving_average(data['loss'], window_size)
         plt.plot(data['time'][:len(smoothed_loss)], smoothed_loss, marker=markers[i], label=f"{cs_name}")
-    plt.xlabel('Time', fontsize=14)
-    plt.ylabel('Loss', fontsize=14)
-    plt.title('Time vs. Loss', fontsize=16)
-    plt.legend(fontsize=12)
+    plt.xlabel('Time', fontsize=FONTSIZE)
+    plt.ylabel('Loss', fontsize=FONTSIZE)
+    # plt.title('Time vs. Loss', fontsize=16)
+    plt.legend(fontsize=FONTSIZE)
 
     plt.tight_layout()
+    # Save the plot if save_path is provided
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+        print(f"Plot saved to {save_path}")
+    plt.show()
+
+
+def plot_data_tmp(data_dicts, window_size=1, save_path=None):
+    plt.figure(figsize=(16, 6))
+
+    # Plot time vs. accuracy
+    plt.subplot(1, 2, 1)
+    markers = ['o', '+', '*', 'x', 'v']
+    for i, (cs_name, data) in enumerate(data_dicts.items()):
+        if cs_name == "BSFL":
+            smoothed_reg = moving_average(data['regret'][1:], window_size)
+        else:
+            smoothed_reg = moving_average(np.cumsum(data['regret'][1:]), window_size)
+        plt.plot(np.linspace(0,data["time"][-1],len(smoothed_reg)), smoothed_reg, marker=markers[i], label=f"{cs_name}", markevery=len(data_dicts[cs_name]["regret"])//len(data_dicts[cs_name]["time"]))
+    plt.xlabel('Time', fontsize=FONTSIZE)
+    plt.ylabel('Regret', fontsize=FONTSIZE)
+    # plt.title('Time vs. Regret', fontsize=FONTSIZE)
+    plt.legend(fontsize=FONTSIZE)
+
+    # Plot time vs. loss
+    plt.subplot(1, 2, 2)
+    for i, (cs_name, data) in enumerate(data_dicts.items()):
+        smoothed_loss = moving_average(data['loss'], window_size)
+        plt.plot(data['time'][:len(smoothed_loss)], smoothed_loss, marker=markers[i], label=f"{cs_name}")
+    plt.xlabel('Time', fontsize=FONTSIZE)
+    plt.ylabel('Loss', fontsize=FONTSIZE)
+    # plt.title('Time vs. Loss', fontsize=16)
+    plt.legend(fontsize=FONTSIZE)
+
+    plt.tight_layout()
+    # Save the plot if save_path is provided
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+        print(f"Plot saved to {save_path}")
     plt.show()
 
 
@@ -60,7 +100,7 @@ if __name__ == '__main__':
     # plt.show(block=True)
 
     # # Define the root directory
-    root_dir = r'../results/methods_compare/lin_reg'
+    root_dir = r'../results/methods_compare/selected_res'
     subdirs = [Path(root_dir) / d for d in os.listdir(root_dir) if os.path.isdir(Path(root_dir) / d)]
     # Sort the subdirectories by creation time
     subdirs_sorted = sorted(subdirs, key=os.path.getctime)[::-1]
@@ -70,17 +110,17 @@ if __name__ == '__main__':
             continue
 
         # Ensure it's a directory
-        if os.path.isdir(dir_path):
-            # Extract the parameter (alpha or beta) from the folder name
-            if '__iid' not in str(dir_path):
-                continue
+        if not os.path.isdir(dir_path):
+            continue
+
+        # Extract the parameter (alpha or beta) from the folder name
+        if 'lin_reg' not in str(dir_path):
+            continue
 
         try:
             print(dir_path)
             data_dicts = read_pkl_files(dir_path)
             plot_data(data_dicts)
-            plt.show(block=False)
-            tmp = 0
             plt.show(block=True)
         except:
             print("didn't managed to check dir. moving to next dir.")

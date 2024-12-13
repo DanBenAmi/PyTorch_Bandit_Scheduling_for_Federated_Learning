@@ -141,7 +141,7 @@ class FederatedLearning:
     def calc_curr_regret(self, selection_method:Client_Selection, iter, tau_min=0.1):
         ''' receives the list of all clients, their distributions, the selection size, the alpha (for the reward
          calculation), and the indexes of a specific selection, finding the maximum energh selection and returning the
-          difference between the maxumum energy and the received selection energy- i.e. the immediate regret. '''
+          difference between the maximum energy and the received selection energy- i.e. the immediate regret. '''
         if comb(len(self.all_clients), selection_method.selection_size) > 300000:
             print("too complex for calculate the regret")
             exit(1)
@@ -227,36 +227,44 @@ class FederatedLearning:
                     self.track_observations.append(client_selection_method.n_observations.copy())
 
     def selection_warmup_til_all_selected(self, client_selection_method, curr_iter=0):
+        client_selection_method.n_observations = client_selection_method.n_observations.astype(np.int64)
         initial_n_obs = client_selection_method.n_observations.copy()
         curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
         p_bar = tqdm()
-        stage = "coarse"
-        while stage != "stop":  # until each client chosen twice.
+        extra_obs = [1, 0.3, 0.1]
+        stage = 0
+        while stage < len(extra_obs):  # until each client chosen twice.
             trained_dict = {'iter_times': [None] * client_selection_method.selection_size}
             selected_clients_indices = client_selection_method.select_clients()
             selected_clients = [self.all_clients[i] for i in selected_clients_indices]
             for i, client in enumerate(selected_clients):
                 iter_time = np.clip(self.tau_min / np.random.normal(client.mean_rate, client.std_rate), self.tau_min, 1)
                 trained_dict["iter_times"][i] = iter_time
-                client_selection_method.n_observations[selected_clients_indices[i]] += curr_warmup_obs[selected_clients_indices[i]]
-
+                client_selection_method.n_observations[selected_clients_indices[i]] = np.add(
+                    client_selection_method.n_observations[selected_clients_indices[i]],
+                    int(curr_warmup_obs[selected_clients_indices[i]]*extra_obs[stage]),
+                    dtype=np.int64
+                )
             curr_iter = np.sum(client_selection_method.n_observations) // client_selection_method.selection_size
             trained_dict["iter"] = curr_iter+1
             client_selection_method.post_iter_process(trained_dict)
             curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
             p_bar.update(1)
             if np.all(curr_warmup_obs>0):
-                stage = "fine" if stage=="coarse" else "stop"
-                if stage=="fine":
-                    client_selection_method.n_observations -= curr_warmup_obs//2
-                    curr_iter = np.sum(client_selection_method.n_observations) // client_selection_method.selection_size
-                    trained_dict["iter"] = curr_iter + 1
-                    client_selection_method.post_iter_process(trained_dict)
-                    initial_n_obs = client_selection_method.n_observations.copy()
-                    curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
-                    p_bar.close()
-                    p_bar = tqdm()
+                stage +=1
+                client_selection_method.n_observations -= (curr_warmup_obs*extra_obs[stage-1]//2).astype(np.int64)
+                curr_iter = np.sum(client_selection_method.n_observations) // client_selection_method.selection_size
+                trained_dict["iter"] = curr_iter + 1
+                client_selection_method.post_iter_process(trained_dict)
+                initial_n_obs = client_selection_method.n_observations.copy()
+                curr_warmup_obs = client_selection_method.n_observations - initial_n_obs
+                p_bar.close()
+                p_bar = tqdm()
         p_bar.close()
+        client_selection_method.n_observations -=(curr_warmup_obs*extra_obs[stage-1]).astype(np.int64)
+        curr_iter = np.sum(client_selection_method.n_observations) // client_selection_method.selection_size
+        trained_dict["iter"] = curr_iter + 1
+        client_selection_method.post_iter_process(trained_dict)
         # for client_idx in range(self.n_clients):
         #     client_selection_method.n_observations[client_idx] -= int(client_selection_method.n_observations[client_idx]//2)
         # curr_iter = np.sum(client_selection_method.n_observations) // client_selection_method.selection_size
@@ -272,9 +280,12 @@ class FederatedLearning:
         # regret analysis
         if calc_regret:
             self.results["regret"] = []
+            self.results["regret_per_time"] = []
 
         self.evaluate_global_model(iter - warmup_iters, total_time - time_left)
         last_time_eval = time_left
+        last_iter_step = iter
+
 
         pbar = tqdm(total=total_time)
         while time_left > 0:
@@ -319,10 +330,20 @@ class FederatedLearning:
                 self.tb_writer.add_scalar("lr", lr_sched.get_lr(), total_time-time_left)
                 last_time_eval = time_left
                 lr_sched.step()
+                if calc_regret:
+                    self.results["regret_per_time"].append(np.mean(self.results["regret"][last_iter_step-iter:]))
+                    last_iter_step = iter
+                    self.tb_writer.add_scalar("regret per time", np.sum(self.results["regret_per_time"]), total_time - time_left)
+
+
+            # if iter >= last_iter_step + 3:
+            #     last_iter_step = iter
+            #     lr_sched.step()
 
             # regret analysis
             if calc_regret:
                 self.results["regret"].append(self.calc_curr_regret(client_selection_method, iter))
+
 
             iter += 1
             pbar.update(total_iter_time)

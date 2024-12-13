@@ -8,19 +8,23 @@ from typing import List
 from Linear_regrression.LinearRegressionModel import LinearRegressionModel
 from CNN.CNN_Model import CNNModel
 from CNN.FlexibleCNN import FlexibleCNN
+from CNN.ImprovedCNN import ImprovedCNN
+from CNN.resnet18 import ResNet18
 from FL import FederatedLearning, LRScheduler
 from Client_Selection import *
+# from Linear_regrression.lin_reg_simulation import global_model
 from data_utils import *
+import json
 
 Debug = False
 
 def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_bulks, n_clients, selection_size, dataset_name='cifar10',
                               iid=True, calc_regret=False, lr_sched:LRScheduler=0.001, fast_clients_relation=None,
-                              slow_clients_relation=None, mid_clients_mean=None, warmup_temperature=None):
+                              slow_clients_relation=None, mid_clients_mean=None, warmup_temperature=None, config=None):
     total_time = time_bulks * n_clients // selection_size
 
     # Load and preprocess the dataset
-    train_dataset, test_dataset = get_data(dataset_name)
+    train_dataset, test_dataset = get_data(dataset_name, **config["data_lin"])
 
     # Split the dataset into smaller datasets for each client
     client_datasets, qs = split_data(train_dataset, n_clients, iid=iid, dataset_name=dataset_name)
@@ -37,22 +41,25 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
     res_dir = os.path.join(f"results","methods_compare",f"{dataset_name}", f'{datetime.now().strftime("%Y-%m-%d_%H-%M")}'
         f'_{"" if iid else "non"}_iid__{dataset_name}__{n_clients}_{selection_size}__{time_bulks}t__'
         f'lr{int(-1 * np.log10(lr_sched.get_lr()))}')
-    if os.path.isdir(res_dir):
+    while os.path.isdir(res_dir):
         time.sleep(60)
         res_dir = os.path.join(f"results", "methods_compare", f"{dataset_name}",
                                f'{datetime.now().strftime("%Y-%m-%d_%H-%M")}'
                                f'_{"" if iid else "non"}_iid__{dataset_name}__{n_clients}_{selection_size}__{time_bulks}t__'
                                f'lr{int(-1 * np.log10(lr_sched.get_lr()))}')
-    os.makedirs(res_dir, exist_ok=True)
+    os.makedirs(res_dir, exist_ok=False)
 
     if dataset_name == 'lin_reg':
         global_model = LinearRegressionModel(input_dim=train_dataset[0][0].size()[0], output_dim=1)
         local_model = LinearRegressionModel(input_dim=train_dataset[0][0].size()[0], output_dim=1).to(device)
-    else:
+    elif dataset_name=="fashion_mnist":
         # global_model = CNNModel(input_shape=tuple(train_dataset[0][0].size()), num_classes=10)
         global_model = FlexibleCNN(input_shape=tuple(train_dataset[0][0].size()), num_classes=10)
         # local_model = CNNModel(input_shape=tuple(train_dataset[0][0].size()), num_classes=10).to(device)global_model = CNNModel(input_shape=tuple(train_dataset[0][0].size()), num_classes=10)
         local_model = FlexibleCNN(input_shape=tuple(train_dataset[0][0].size()), num_classes=10).to(device)
+    else:
+        global_model = ResNet18(input_shape=tuple(train_dataset[0][0].size()), num_classes=10)
+        local_model = ResNet18(input_shape=tuple(train_dataset[0][0].size()), num_classes=10).to(device)
 
     global_weights = copy.deepcopy(global_model.state_dict())
 
@@ -81,7 +88,7 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
     #     pickle.dump({"all_clients": all_clients, "global_weights": global_weights}, f)
 
     run_dict = {"lr_sched":lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, **css_args[0], "mid_mean_min": mid_clients_mean[0], "mid_mean_max": mid_clients_mean[1]}
-    print(datetime.now().strftime("%Y-%m-%d_%H:%M"), "\n", {"lr": lr_sched.scheduler_type, "calc_regret": calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, "mid_clients_mean":mid_clients_mean}, "\n", css_args[0])
+    print(datetime.now().strftime("%Y-%m-%d_%H:%M"), "\n", {"lr": lr_sched.scheduler_type, "first_lr":lr_sched.first_lr, "last_lr":lr_sched.last_lr, "lr_iters":lr_sched.num_iters, calc_regret: calc_regret, "iid": iid, 'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation, "mid_clients_mean":mid_clients_mean}, "\n", css_args[0])
     # bsfl_loss, bsfl_acc = None, None
     alpha, beta = css_args[0]['alpha'], css_args[0]['beta']
     for cs_method, args, T in zip(cs_methods, css_args, warmup_temperature):
@@ -91,6 +98,8 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         tb_dir = os.path.join(res_dir, f"tb_{selection_method}")
         writer = SummaryWriter(log_dir=tb_dir)
         writer.add_hparams(run_dict, {})
+        if isinstance(selection_method,BSFL):
+            writer.add_text("config", json.dumps(config, indent=4))  # Format it with indentation for better readability
 
         res = args.copy()
         res.update({'total_time': total_time, 'dataset':dataset_name, 'n_clientsn':n_clients, 'selection_size':selection_size, "fast_clients_relation": fast_clients_relation, "slow_clients_relation": slow_clients_relation})
@@ -106,6 +115,8 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
             selection_method.update_n_obs_warmup(warmup_iters, slow_mid_fast_means, slow_mid_fast_relations,
                                                  all_clients_dists, T=T)
             curr_iter = fl_simulation.selection_warmup_til_all_selected(selection_method, curr_iter=warmup_iters)
+        else:
+            curr_iter = 0
         warmup_n_observations = selection_method.n_observations.copy()
 
         # Train the global model using Federated Learning
@@ -115,12 +126,16 @@ def selection_methods_compare(cs_methods:List[Client_Selection], css_args, time_
         if not iid and isinstance(selection_method, (BSFL, cs_ucb, Random_Selection)):
             if isinstance(selection_method, BSFL):
                 importances = selection_method.data_size * selection_method.data_quality
+                tuple_list = [
+                    f'({int(res["n_observations_no_warmup"][i])}, {all_clients_dists[i, 0]:.2f}, {int(importances[i])}, {selection_method.g[i]:.2f})'
+                    for i in range(n_clients)
+                ]
             else:
                 importances = selection_method.data_size
-            tuple_list = [
-                f'({int(res["n_observations_no_warmup"][i])}, {all_clients_dists[i,0]:.2f}, {int(importances[i])})'
-                for i in range(n_clients)
-            ]
+                tuple_list = [
+                    f'({int(res["n_observations_no_warmup"][i])}, {all_clients_dists[i,0]:.2f}, {int(importances[i])})'
+                    for i in range(n_clients)
+                ]
             result_str = ', '.join(tuple_list)
             writer.add_text('(obs,rates,imps)', result_str)
             # array_str = ', '.join(str(int(num)) for num in selection_method.data_size * selection_method.data_quality)
@@ -147,7 +162,7 @@ def load_config(file_path):
 
 if __name__ == "__main__":
     # Load the config
-    config_path = r'configs/non_iid_fashion.yml'
+    config_path = r'configs/lin_reg_iid.yml'
     config = load_config(config_path)
 
     css = [BSFL, cs_ucb, RBCS_F, PowerOfChoice, Random_Selection]
@@ -186,5 +201,5 @@ if __name__ == "__main__":
     selection_methods_compare(css, css_args, time_bulks, n_clients, selection_size, dataset_name=dataset_name, iid=iid,
                               calc_regret=calc_regret, lr_sched=lr_sched, fast_clients_relation=fast_relation,
                               slow_clients_relation=slow_relation, mid_clients_mean=mid_clients_mean,
-                              warmup_temperature=warmup_temperature)
+                              warmup_temperature=warmup_temperature, config=config)
 
